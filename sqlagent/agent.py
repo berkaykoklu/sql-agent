@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlagent import prices
-from sqlagent.db import column_values, describe_table, run
+from sqlagent import critic, prices
+from sqlagent.db import QueryError, column_values, describe_table, execute, run
 
 SYSTEM = """<role>You are an expert SQLite analyst.</role>
 
@@ -94,6 +94,9 @@ class Result:
     input_tokens: int = 0
     output_tokens: int = 0
     exhausted: bool = False
+    sql_before_critic: str | None = None
+    critic: list[dict] = field(default_factory=list)
+    reverted: bool = False
 
     @property
     def cost(self) -> float:
@@ -137,9 +140,7 @@ def _messages(question: str, evidence: str, overview: str) -> list[dict]:
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
 
 
-def agent(client, question: str, evidence: str, overview: str, db_path: Path, max_steps: int = 15) -> Result:
-    messages = _messages(question, evidence, overview)
-    result = Result()
+def _explore(client, messages: list[dict], db_path: Path, result: Result, max_steps: int) -> None:
     for _ in range(max_steps + 1):
         resp = client.chat.completions.create(
             model=prices.MODEL, reasoning_effort=prices.REASONING_EFFORT, messages=messages, tools=TOOLS)
@@ -147,7 +148,7 @@ def agent(client, question: str, evidence: str, overview: str, db_path: Path, ma
         msg = resp.choices[0].message
         if not msg.tool_calls:
             result.sql = extract_sql(msg.content or "")
-            return result
+            return
         if len(result.steps) >= max_steps:
             break
         messages.append({
@@ -174,4 +175,35 @@ def agent(client, question: str, evidence: str, overview: str, db_path: Path, ma
         queries = [s["args"]["query"] for s in result.steps
                    if s["tool"] == "run_sql" and isinstance(s["args"], dict) and "query" in s["args"]]
         result.sql = str(queries[-1]) if queries else ""
+
+
+def _returns_rows(db_path: Path, sql: str) -> bool:
+    try:
+        return bool(sql.strip()) and bool(execute(db_path, sql))
+    except QueryError:
+        return False
+
+
+def agent(client, question: str, evidence: str, overview: str, db_path: Path,
+          max_steps: int = 15, critic_rounds: int = 0) -> Result:
+    messages = _messages(question, evidence, overview)
+    result = Result()
+    _explore(client, messages, db_path, result, max_steps)
+    if critic_rounds:
+        result.sql_before_critic = result.sql
+    for _ in range(critic_rounds):
+        columns = "\n\n".join(dict.fromkeys(s["output"] for s in result.steps if s["tool"] == "describe_table"))
+        verdict, feedback, resp = critic.review(
+            client, question, evidence, overview, columns, result.sql, run(db_path, result.sql))
+        result.add_usage(resp)
+        result.critic.append({"verdict": verdict, "feedback": feedback})
+        if verdict != "REVISE":
+            break
+        previous = result.sql
+        messages.append({"role": "assistant", "content": f"<sql>{previous}</sql>"})
+        messages.append({"role": "user", "content": critic.REVISE_TURN.format(feedback=feedback)})
+        _explore(client, messages, db_path, result, len(result.steps) + 5)
+        if _returns_rows(db_path, previous) and not _returns_rows(db_path, result.sql):
+            result.sql, result.reverted = previous, True
+            break
     return result

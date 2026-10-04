@@ -45,3 +45,13 @@ def test_tool_usage_is_averaged_and_delta_needs_a_baseline():
     assert s["explorer"]["tools"] == {"describe_table": 1.0, "run_sql": 2.0}
     assert "delta" not in s["explorer"] and s["n"] == 2
     assert "explorer" in svg(s)
+
+
+def test_critic_effect_is_summarised_on_the_same_answers():
+    base = {"condition": "explorer_critic", "difficulty": "simple", "status": "ok", "cost": 0.001,
+            "exhausted": False, "steps": [], "reverted": False}
+    rs = [base | {"question_id": 1, "correct": True, "correct_before_critic": False, "critic": [{"verdict": "REVISE"}]},
+          base | {"question_id": 2, "correct": False, "correct_before_critic": True, "critic": [{"verdict": "REVISE"}], "reverted": True},
+          base | {"question_id": 3, "correct": True, "correct_before_critic": True, "critic": [{"verdict": "OK"}]}]
+    c = summarize(rs)["explorer_critic"]["critic"]
+    assert c == {"flagged": 2, "fixed": 1, "broke": 1, "reverted": 1, "acc_before": 2 / 3}

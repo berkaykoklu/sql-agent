@@ -34,6 +34,15 @@ def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0) -> dict:
             "exhausted": sum(r["exhausted"] for r in picked),
             "tools": {k: v / len(picked) for k, v in tools.items()},
         }
+        reviewed = [r for r in picked if "correct_before_critic" in r]
+        if reviewed:
+            out[c]["critic"] = {
+                "flagged": sum(any(v["verdict"] == "REVISE" for v in r["critic"]) for r in reviewed),
+                "fixed": sum(r["correct"] and not r["correct_before_critic"] for r in reviewed),
+                "broke": sum(r["correct_before_critic"] and not r["correct"] for r in reviewed),
+                "reverted": sum(r["reverted"] for r in reviewed),
+                "acc_before": sum(r["correct_before_critic"] for r in reviewed) / len(reviewed),
+            }
     n = len(qids)
     for c in conditions:
         if BASELINE not in conditions or c == BASELINE:
@@ -88,6 +97,11 @@ def main() -> None:
     for c in s["conditions"]:
         if s[c]["tools"]:
             print(f"{c} tools/question: " + " · ".join(f"{k} {v:.2f}" for k, v in sorted(s[c]["tools"].items())))
+    for c in s["conditions"]:
+        if "critic" in s[c]:
+            k = s[c]["critic"]
+            print(f"{c} critic: accuracy before {k['acc_before']:.1%} → after {s[c]['acc']['overall']:.1%}; "
+                  f"flagged {k['flagged']}, fixed {k['fixed']}, broke {k['broke']}, reverted {k['reverted']}")
     for c in s["conditions"]:
         if "delta" in s[c]:
             low, high = s[c]["ci"]

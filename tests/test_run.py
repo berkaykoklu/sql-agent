@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace as NS
 
-from eval.run import evaluate, load_done, pilot_sample
+from eval.run import evaluate, load_done, sample_by_difficulty
 
 
 def reply(content):
@@ -68,12 +68,13 @@ def test_load_done_retries_errors_and_respects_later_rows(tmp_path):
     assert load_done(tmp_path / "missing.jsonl") == set()
 
 
-def test_pilot_sample_is_stratified_and_deterministic():
+def test_sample_by_difficulty_is_stratified_and_deterministic():
     qs = [{"question_id": i, "difficulty": d}
           for i, d in enumerate(["simple"] * 30 + ["moderate"] * 50 + ["challenging"] * 20)]
-    sample = pilot_sample(qs)
+    sample = sample_by_difficulty(qs, 20)
     assert [q["difficulty"] for q in sample].count("moderate") == 10 and len(sample) == 20
-    assert sample == pilot_sample(qs)
+    assert sample == sample_by_difficulty(qs, 20)
+    assert len(sample_by_difficulty(qs, 60)) == 60
 
 
 def test_explorer_gets_the_database_map(db):
@@ -82,3 +83,15 @@ def test_explorer_gets_the_database_map(db):
     assert row["status"] == "ok" and row["correct"] is True
     assert '<database name="shop">' in client.calls[0]["messages"][1]["content"]
     assert len(client.calls[0]["tools"]) == 3
+
+
+def test_critic_condition_scores_the_answer_before_and_after_the_critic(db):
+    client = FakeClient([
+        reply("<sql>SELECT name, note FROM items WHERE id = 1</sql>"),
+        reply("<verdict>REVISE</verdict><feedback>Check 2: drop note.</feedback>"),
+        reply("<sql>SELECT name FROM items WHERE id = 1</sql>"),
+        reply("<verdict>OK</verdict>"),
+    ])
+    row = evaluate(client, question("SELECT name FROM items WHERE id = 1"), "explorer_critic", db)
+    assert row["correct"] is True and row["correct_before_critic"] is False
+    assert [c["verdict"] for c in row["critic"]] == ["REVISE", "OK"] and row["reverted"] is False

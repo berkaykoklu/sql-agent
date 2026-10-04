@@ -12,8 +12,8 @@ from openai import OpenAI
 from sqlagent.agent import agent
 from sqlagent.db import QUESTIONS, QueryError, db_file, execute, overview, same_result
 
-CONDITIONS = ("explorer",)
-PILOT = {"simple": 6, "moderate": 10, "challenging": 4}
+CONDITIONS = ("explorer_critic",)
+CRITIC_ROUNDS = {"explorer": 0, "explorer_critic": 2}
 
 
 @lru_cache(maxsize=None)
@@ -21,12 +21,13 @@ def cached_overview(db_path: Path) -> str:
     return overview(db_path)
 
 
-def pilot_sample(questions: list[dict]) -> list[dict]:
+def sample_by_difficulty(questions: list[dict], n: int, seed: int = 0) -> list[dict]:
     by_difficulty = defaultdict(list)
     for q in questions:
         by_difficulty[q["difficulty"]].append(q)
-    rng = random.Random(0)
-    return [q for d, n in PILOT.items() for q in rng.sample(by_difficulty[d], n)]
+    rng = random.Random(seed)
+    return [q for group in by_difficulty.values()
+            for q in rng.sample(group, round(n * len(group) / len(questions)))]
 
 
 def load_done(path: Path) -> set[tuple[int, str]]:
@@ -49,32 +50,41 @@ def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
     except QueryError as e:
         return row | {"status": "gold_failed", "error": str(e)}
     try:
-        r = agent(client, q["question"], q["evidence"], cached_overview(db_path), db_path)
+        r = agent(client, q["question"], q["evidence"], cached_overview(db_path), db_path,
+                  critic_rounds=CRITIC_ROUNDS[condition])
     except Exception as e:  # API failure after SDK retries; the next run retries this row
         return row | {"status": "error", "error": repr(e)}
-    try:
-        correct = bool(r.sql.strip()) and same_result(execute(db_path, r.sql), gold)
-    except QueryError:
-        correct = False
-    return row | {
-        "status": "ok", "correct": correct, "sql": r.sql, "steps": r.steps,
+    row |= {
+        "status": "ok", "correct": _matches(db_path, r.sql, gold), "sql": r.sql, "steps": r.steps,
         "input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
         "cost": r.cost, "exhausted": r.exhausted,
     }
+    if r.sql_before_critic is not None:
+        row |= {"sql_before_critic": r.sql_before_critic, "critic": r.critic, "reverted": r.reverted,
+                "correct_before_critic": _matches(db_path, r.sql_before_critic, gold)}
+    return row
+
+
+def _matches(db_path: Path, sql: str, gold: list[tuple]) -> bool:
+    try:
+        return bool(sql.strip()) and same_result(execute(db_path, sql), gold)
+    except QueryError:
+        return False
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run the explorer agent on BIRD mini-dev.")
-    p.add_argument("--pilot", action="store_true", help="20 questions stratified by difficulty")
+    p.add_argument("--questions", default=str(QUESTIONS), help="question file in BIRD format")
+    p.add_argument("--sample", type=int, help="N questions stratified by difficulty")
     p.add_argument("--limit", type=int, help="first N questions only")
     p.add_argument("--out", default="results.jsonl")
     p.add_argument("--workers", type=int, default=8)
     a = p.parse_args()
 
     # mini-dev ships items 137 and 138 twice, byte-identical; 498 unique questions
-    questions = list({q["question_id"]: q for q in json.loads(QUESTIONS.read_text())}.values())
-    if a.pilot:
-        questions = pilot_sample(questions)
+    questions = list({q["question_id"]: q for q in json.loads(Path(a.questions).read_text())}.values())
+    if a.sample:
+        questions = sample_by_difficulty(questions, a.sample)
     elif a.limit:
         questions = questions[: a.limit]
 
