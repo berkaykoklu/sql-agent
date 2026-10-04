@@ -19,6 +19,8 @@ def db(tmp_path):
         CREATE TABLE regions (name TEXT);
         INSERT INTO regions VALUES ('east Bohemia'), ('east Bohemia'), ('north Bohemia'),
                                    ('Prague'), ('50%_off');
+        CREATE TABLE schools ("Free Meal (K-12)" INTEGER);
+        INSERT INTO schools VALUES (10), (10), (20);
         """
     )
     conn.execute("INSERT INTO items VALUES (6, 'long', ?)", ("a" * 500,))
@@ -34,3 +36,10 @@ def db(tmp_path):
         encoding="utf-8",
     )
     return path
+
+
+@pytest.fixture
+def database(db):
+    from sqlagent.catalog import from_bird_csv
+    from sqlagent.db import Database
+    return Database.sqlite(db, catalog=from_bird_csv(db.parent / "database_description"))
