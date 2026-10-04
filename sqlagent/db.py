@@ -10,6 +10,8 @@ DB_DIR = ROOT / "data/minidev/MINIDEV/dev_databases"
 QUESTIONS = ROOT / "data/minidev/MINIDEV/mini_dev_sqlite.json"
 MAX_ROWS = 20
 MAX_LINE = 300
+# mode=ro stops writes to the database, but VACUUM INTO and ATTACH can still create files elsewhere
+_READ_ACTIONS = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION, sqlite3.SQLITE_RECURSIVE}
 
 
 class QueryError(Exception):
@@ -36,6 +38,7 @@ def execute(db_path: Path | str, sql: str, timeout: float = 10.0, params: tuple 
     deadline = time.monotonic() + timeout
     # sqlite3's own timeout only covers lock waits; this aborts a running query
     conn.set_progress_handler(lambda: time.monotonic() > deadline, 10_000)
+    conn.set_authorizer(lambda action, *_: sqlite3.SQLITE_OK if action in _READ_ACTIONS else sqlite3.SQLITE_DENY)
     try:
         return conn.execute(sql, params).fetchall()
     except sqlite3.Error as e:

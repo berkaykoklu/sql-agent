@@ -12,7 +12,7 @@ def test_execute_returns_all_rows(db):
 
 
 def test_read_only_rejects_writes(db):
-    with pytest.raises(QueryError, match="readonly"):
+    with pytest.raises(QueryError, match="readonly|not authorized"):
         execute(db, "DELETE FROM items")
     assert execute(db, "SELECT count(*) FROM items") == [(6,)]
 
@@ -92,3 +92,16 @@ def test_column_values_without_search_lists_top_values_and_distinct_count(db):
 
 def test_column_values_rejects_unknown_column(db):
     assert column_values(db, "regions", "nope").startswith("ERROR: unknown column 'nope'")
+
+
+def test_execute_cannot_write_files_via_vacuum_into_or_attach(db, tmp_path):
+    for sql in (f"VACUUM INTO '{tmp_path / 'copy.db'}'", f"ATTACH DATABASE '{tmp_path / 'new.db'}' AS x"):
+        with pytest.raises(QueryError, match="not authorized|authorization denied"):
+            execute(db, sql)
+    assert not (tmp_path / "copy.db").exists() and not (tmp_path / "new.db").exists()
+
+
+def test_execute_still_allows_ctes_recursion_and_window_functions(db):
+    sql = ("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 3) "
+           "SELECT x, ROW_NUMBER() OVER (ORDER BY x DESC) FROM c")
+    assert sorted(execute(db, sql)) == [(1, 3), (2, 2), (3, 1)]
