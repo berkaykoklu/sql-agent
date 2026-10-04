@@ -9,16 +9,16 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from sqlagent.agent import agent, one_shot
-from sqlagent.db import QUESTIONS, QueryError, db_file, execute, same_result, schema
+from sqlagent.agent import agent
+from sqlagent.db import QUESTIONS, QueryError, db_file, execute, overview, same_result
 
-CONDITIONS = ("one_shot", "one_shot_repeat", "agent", "agent_verify")
+CONDITIONS = ("explorer",)
 PILOT = {"simple": 6, "moderate": 10, "challenging": 4}
 
 
 @lru_cache(maxsize=None)
-def cached_schema(db_path: Path) -> str:
-    return schema(db_path)
+def cached_overview(db_path: Path) -> str:
+    return overview(db_path)
 
 
 def pilot_sample(questions: list[dict]) -> list[dict]:
@@ -49,11 +49,7 @@ def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
     except QueryError as e:
         return row | {"status": "gold_failed", "error": str(e)}
     try:
-        s = cached_schema(db_path)
-        if condition.startswith("one_shot"):
-            r = one_shot(client, q["question"], q["evidence"], s)
-        else:
-            r = agent(client, q["question"], q["evidence"], s, db_path, verify=condition == "agent_verify")
+        r = agent(client, q["question"], q["evidence"], cached_overview(db_path), db_path)
     except Exception as e:  # API failure after SDK retries; the next run retries this row
         return row | {"status": "error", "error": repr(e)}
     try:
@@ -68,7 +64,7 @@ def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Run one_shot and agent on BIRD mini-dev.")
+    p = argparse.ArgumentParser(description="Run the explorer agent on BIRD mini-dev.")
     p.add_argument("--pilot", action="store_true", help="20 questions stratified by difficulty")
     p.add_argument("--limit", type=int, help="first N questions only")
     p.add_argument("--out", default="results.jsonl")

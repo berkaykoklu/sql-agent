@@ -1,9 +1,10 @@
 import argparse
+import json
 
 from openai import OpenAI
 
 from sqlagent.agent import agent
-from sqlagent.db import db_file, run, schema
+from sqlagent.db import db_file, overview, run
 
 
 def main() -> None:
@@ -14,9 +15,9 @@ def main() -> None:
     a = p.parse_args()
 
     path = db_file(a.db)
-    r = agent(OpenAI(max_retries=5), a.question, a.evidence, schema(path), path)
+    r = agent(OpenAI(max_retries=5), a.question, a.evidence, overview(path), path)
     for i, step in enumerate(r.steps, 1):
-        print(f"--- step {i}\n{step['sql']}\n{step['output']}\n")
+        print(f"--- step {i}: {step['tool']}({json.dumps(step['args'])})\n{step['output']}\n")
     print(f"=== final{' (step cap hit)' if r.exhausted else ''}\n{r.sql}\n{run(path, r.sql)}\n")
     print(f"{r.input_tokens} in / {r.output_tokens} out tokens, ${r.cost:.5f}")
 

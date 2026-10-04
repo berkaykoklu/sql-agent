@@ -27,30 +27,30 @@ def question(gold):
 
 def test_correct_answer_is_scored_ok(db):
     row = evaluate(FakeClient([reply("SELECT name FROM items WHERE id = 1")]),
-                   question("SELECT name FROM items WHERE id = 1"), "one_shot", db)
+                   question("SELECT name FROM items WHERE id = 1"), "explorer", db)
     assert row["status"] == "ok" and row["correct"] is True and row["cost"] > 0
 
 
 def test_broken_prediction_is_wrong_not_fatal(db):
     row = evaluate(FakeClient([reply("SELECT nope FROM items")]),
-                   question("SELECT name FROM items"), "one_shot", db)
+                   question("SELECT name FROM items"), "explorer", db)
     assert row["status"] == "ok" and row["correct"] is False
 
 
 def test_empty_sql_never_matches_empty_gold(db):
-    row = evaluate(FakeClient([reply("")]), question("SELECT id FROM items WHERE id > 99"), "agent", db)
+    row = evaluate(FakeClient([reply("")]), question("SELECT id FROM items WHERE id > 99"), "explorer", db)
     assert row["correct"] is False
 
 
 def test_failing_gold_is_excluded(db):
-    row = evaluate(FakeClient([]), question("SELECT nope FROM items"), "one_shot", db)
+    row = evaluate(FakeClient([]), question("SELECT nope FROM items"), "explorer", db)
     assert row["status"] == "gold_failed"
 
 
 def test_api_failure_is_recorded_as_error(db):
     class Down:
         chat = NS(completions=NS(create=lambda **kw: (_ for _ in ()).throw(RuntimeError("503"))))
-    row = evaluate(Down(), question("SELECT 1"), "one_shot", db)
+    row = evaluate(Down(), question("SELECT 1"), "explorer", db)
     assert row["status"] == "error" and "503" in row["error"]
 
 
@@ -76,12 +76,9 @@ def test_pilot_sample_is_stratified_and_deterministic():
     assert sample == pilot_sample(qs)
 
 
-def test_every_condition_dispatches_to_the_right_call(db):
-    shapes = {}
-    for condition in ("one_shot", "one_shot_repeat", "agent", "agent_verify"):
-        client = FakeClient([reply("SELECT 1")])
-        row = evaluate(client, question("SELECT 1"), condition, db)
-        assert row["status"] == "ok" and row["condition"] == condition
-        shapes[condition] = ("tools" in client.calls[0], "always run" in client.calls[0]["messages"][0]["content"])
-    assert shapes == {"one_shot": (False, False), "one_shot_repeat": (False, False),
-                      "agent": (True, False), "agent_verify": (True, True)}
+def test_explorer_gets_the_database_map(db):
+    client = FakeClient([reply("<sql>SELECT 1</sql>")])
+    row = evaluate(client, question("SELECT 1"), "explorer", db)
+    assert row["status"] == "ok" and row["correct"] is True
+    assert '<database name="shop">' in client.calls[0]["messages"][1]["content"]
+    assert len(client.calls[0]["tools"]) == 3
