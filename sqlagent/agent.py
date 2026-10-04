@@ -97,7 +97,8 @@ class Result:
 def extract_sql(text: str) -> str:
     match = re.search(r"<sql>(.*?)</sql>", text, re.S | re.I)
     if match:
-        return html.unescape(match.group(1)).strip()  # inside XML tags the model writes > as &gt;
+        # inside XML tags the model sometimes writes > as &gt; and " as \"
+        return html.unescape(match.group(1)).replace('\\"', '"').strip()
     match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.S | re.I)
     return (match.group(1) if match else text).strip()
 
@@ -118,12 +119,15 @@ def call_tool(db_path: Path, name: str, raw_args: str) -> tuple[dict | None, str
         return None, f"ERROR: bad arguments for {name}: {str(raw_args)[:200]}"
 
 
+FINAL_TURN = "Step limit reached. Reply now with your final SQL inside <sql></sql> tags."
+
+
 def _messages(question: str, evidence: str, overview: str) -> list[dict]:
     user = f"{overview}\n<hint>{evidence or 'none'}</hint>\n<question>{question}</question>"
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
 
 
-def agent(client, question: str, evidence: str, overview: str, db_path: Path, max_steps: int = 10) -> Result:
+def agent(client, question: str, evidence: str, overview: str, db_path: Path, max_steps: int = 15) -> Result:
     messages = _messages(question, evidence, overview)
     result = Result()
     for _ in range(max_steps + 1):
@@ -150,7 +154,14 @@ def agent(client, question: str, evidence: str, overview: str, db_path: Path, ma
             result.steps.append({"tool": c.function.name, "args": args, "output": output})
             messages.append({"role": "tool", "tool_call_id": c.id, "content": output})
     result.exhausted = True
-    queries = [s["args"]["query"] for s in result.steps
-               if s["tool"] == "run_sql" and isinstance(s["args"], dict) and "query" in s["args"]]
-    result.sql = str(queries[-1]) if queries else ""
+    messages.append({"role": "user", "content": FINAL_TURN})
+    resp = client.chat.completions.create(
+        model=prices.MODEL, reasoning_effort=prices.REASONING_EFFORT, messages=messages,
+        tools=TOOLS, tool_choice="none")
+    result.add_usage(resp)
+    result.sql = extract_sql(resp.choices[0].message.content or "")
+    if not result.sql:
+        queries = [s["args"]["query"] for s in result.steps
+                   if s["tool"] == "run_sql" and isinstance(s["args"], dict) and "query" in s["args"]]
+        result.sql = str(queries[-1]) if queries else ""
     return result

@@ -60,14 +60,31 @@ def test_unknown_tool_and_bad_arguments_come_back_as_errors(db):
     assert r.sql == "SELECT 1"
 
 
-def test_step_cap_counts_every_call_and_falls_back_to_last_run_sql(db):
-    replies = [reply(tool_calls=[call("run_sql", {"query": f"SELECT {i}"})]) for i in range(9)]
+def _cap_replies(final):
+    replies = [reply(tool_calls=[call("run_sql", {"query": f"SELECT {i}"})]) for i in range(14)]
     replies += [reply(tool_calls=[call("describe_table", {"table": "nope"})]),
-                reply(tool_calls=[call("run_sql", {"query": "SELECT 99"})])]
-    client = FakeClient(replies)
-    r = agent(client, "q", "", "MAP", db, max_steps=10)
-    assert r.exhausted and len(r.steps) == 10 and len(client.calls) == 11
-    assert r.sql == "SELECT 8"
+                reply(tool_calls=[call("run_sql", {"query": "SELECT 99"})]),
+                reply(final)]
+    return replies
+
+
+def test_step_cap_asks_for_a_final_answer_without_tools(db):
+    client = FakeClient(_cap_replies("<sql>SELECT 42</sql>"))
+    r = agent(client, "q", "", "MAP", db)
+    assert r.exhausted and len(r.steps) == 15 and len(client.calls) == 17
+    assert client.calls[-1]["tool_choice"] == "none"
+    assert client.calls[-1]["messages"][-1]["role"] == "user"
+    assert r.sql == "SELECT 42"
+
+
+def test_step_cap_falls_back_to_last_run_sql_when_final_turn_is_empty(db):
+    client = FakeClient(_cap_replies(""))
+    r = agent(client, "q", "", "MAP", db)
+    assert r.exhausted and r.sql == "SELECT 13"
+
+
+def test_extract_sql_unescapes_backslash_quotes_inside_sql_tags():
+    assert extract_sql('<sql>SELECT f.\\"District Code\\" FROM frpm AS f</sql>') == 'SELECT f."District Code" FROM frpm AS f'
 
 
 def test_usage_and_cost_accumulate(db):
