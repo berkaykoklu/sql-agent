@@ -38,7 +38,9 @@ def from_bird_csv(folder: Path | str) -> Catalog:
                 value = " ".join((row.get(key) or "").split())
                 if value and value.lower() != name.lower() and value not in parts:
                     parts.append(value)
-            values = " ".join((row.get("value_description") or "").split())
+            # one BIRD file (financial/account.csv) has an unnamed trailing header field holding the value codes
+            raw = [row.get("value_description") or ""] + [v for k, v in row.items() if not k and isinstance(v, str)]
+            values = " ".join(" ".join(raw).split())
             if values:
                 parts.append(f"values: {values}")
             if name and parts:

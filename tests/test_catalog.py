@@ -17,3 +17,12 @@ def test_user_catalog_loads_from_json(tmp_path):
     c = load(path)
     assert table_note(c, "orders") == "one row per order" and column_note(c, "ORDERS", "Amount") == "total in EUR"
     assert table_note(None, "orders") == "" and column_note(None, "orders", "amount") == ""
+
+
+def test_text_under_an_unnamed_trailing_column_is_kept(tmp_path):
+    # BIRD's financial/account.csv has an extra empty header field that holds the value codes
+    (tmp_path / "account.csv").write_text(
+        "original_column_name,column_name,column_description,data_format,value_description,\n"
+        'frequency,frequency,frequency of the acount,text,,"""POPLATEK PO OBRATU"" stands for issuance after transaction"\n')
+    note = column_note(from_bird_csv(tmp_path), "account", "frequency")
+    assert note == 'frequency of the acount; values: "POPLATEK PO OBRATU" stands for issuance after transaction'

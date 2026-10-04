@@ -154,6 +154,8 @@ class Database:
     def _rows(self, statement) -> list[tuple]:
         if isinstance(statement, str) and self.kind != "sqlite":
             check_single_select(statement)  # SQLite has the authorizer and its driver runs one statement only
+        if isinstance(statement, str) and self.engine.dialect.paramstyle in ("format", "pyformat"):
+            statement = statement.replace("%", "%%")  # psycopg/pymysql read a bare % in LIKE '%x%' as a placeholder
         deadline = time.monotonic() + self.timeout
         try:
             with self.engine.connect() as conn:
