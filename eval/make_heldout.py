@@ -10,11 +10,14 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def heldout(dev: list[dict], minidev: list[dict], n: int) -> list[dict]:
+def unseen(dev: list[dict], minidev: list[dict]) -> list[dict]:
     seen_ids = {q["question_id"] for q in minidev}
     seen_texts = {_norm(q["question"]) for q in minidev}
-    unseen = [q for q in dev if q["question_id"] not in seen_ids and _norm(q["question"]) not in seen_texts]
-    return sample_by_difficulty(unseen, n)
+    return [q for q in dev if q["question_id"] not in seen_ids and _norm(q["question"]) not in seen_texts]
+
+
+def heldout(dev: list[dict], minidev: list[dict], n: int) -> list[dict]:
+    return sample_by_difficulty(unseen(dev, minidev), n)
 
 
 def main() -> None:
