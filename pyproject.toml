@@ -4,9 +4,11 @@ version = "0.1.0"
 description = "Self-correcting text-to-SQL agent, measured on BIRD mini-dev"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.142.2",
     "openai>=3.24.0",
     "psycopg[binary]>=3.3.6",
     "sqlalchemy>=2.1",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
@@ -25,5 +27,6 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]

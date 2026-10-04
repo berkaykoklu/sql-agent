@@ -117,7 +117,7 @@ class Database:
         self._pks = {t: set(pk.get("constrained_columns") or [])
                      for (_, t), pk in insp.get_multi_pk_constraint(filter_names=self.table_names).items()}
         self._fks = {t: fks for (_, t), fks in insp.get_multi_foreign_keys(filter_names=self.table_names).items()}
-        self._overview: str | None = None
+        self._map: dict | None = None
 
     @classmethod
     def sqlite(cls, path: Path | str, catalog: cat.Catalog | None = None, tables: list[str] | None = None,
@@ -151,7 +151,7 @@ class Database:
             raw.set_progress_handler(None, 0)
             raw.set_authorizer(None)
 
-    def _rows(self, statement) -> list[tuple]:
+    def _query(self, statement) -> tuple[list[str], list[tuple]]:
         if isinstance(statement, str) and self.kind != "sqlite":
             check_single_select(statement)  # SQLite has the authorizer and its driver runs one statement only
         if isinstance(statement, str) and self.engine.dialect.paramstyle in ("format", "pyformat"):
@@ -166,15 +166,23 @@ class Database:
                         conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(self.timeout * 1000)}")
                     # model SQL goes to the driver untouched: text() would read ':23' in '1:23' as a parameter
                     result = conn.exec_driver_sql(statement) if isinstance(statement, str) else conn.execute(statement)
-                    return [tuple(r) for r in result.all()]
+                    return list(result.keys()), [tuple(r) for r in result.all()]
         except SQLAlchemyError as e:
             message = str(getattr(e, "orig", None) or e)
             if time.monotonic() > deadline or "statement timeout" in message or "execution time exceeded" in message:
                 raise QueryError("timeout") from e
             raise QueryError(message.strip()) from e
 
+    def _rows(self, statement) -> list[tuple]:
+        return self._query(statement)[1]
+
     def execute(self, sql: str) -> list[tuple]:
         return self._rows(sql)
+
+    def fetch(self, sql: str, limit: int = 50) -> tuple[list[str], list[list]]:
+        """Column names and the first rows, JSON-ready, for the result table in the web UI."""
+        columns, rows = self._query(sql)
+        return columns, [[_plain(v) for v in r] for r in rows[:limit]]
 
     def run(self, sql: str) -> str:
         try:
@@ -204,21 +212,24 @@ class Database:
             raise QueryError(f"unknown column '{column_name}' in {real}; columns: {', '.join(columns.values())}")
         return real, col
 
-    def _joins(self) -> list[str]:
-        out = []
-        for t in self.table_names:
-            for fk in self._fks.get(t, []):
-                for src, dst in zip(fk["constrained_columns"], fk["referred_columns"] or [None] * 99):
-                    out.append(f"{t}.{src} → {fk['referred_table']}.{dst}" if dst else f"{t}.{src} → {fk['referred_table']}")
-        return out
+    def schema_map(self) -> dict:
+        """Tables with row counts and joins as (table, column) pairs: feeds the overview text and the UI graph."""
+        if self._map is None:
+            joins = [{"from": [t, src], "to": [fk["referred_table"], dst]}
+                     for t in self.table_names for fk in self._fks.get(t, [])
+                     for src, dst in zip(fk["constrained_columns"], fk["referred_columns"] or [None] * 99)]
+            self._map = {"name": self.name, "dialect": self.dialect, "joins": joins,
+                         "tables": [{"name": t, "rows": self._rows(select(func.count()).select_from(table(t)))[0][0]}
+                                    for t in self.table_names]}
+        return self._map
 
     def overview(self) -> str:
-        if self._overview is None:
-            counts = [self._rows(select(func.count()).select_from(table(t)))[0][0] for t in self.table_names]
-            listing = "\n".join(f"{t} ({n:,} rows)" for t, n in zip(self.table_names, counts))
-            self._overview = (f'<database name="{self.name}" dialect="{self.dialect}">\n<tables>\n{listing}\n</tables>\n'
-                              f"<joins>\n{chr(10).join(self._joins()) or '(none declared)'}\n</joins>\n</database>")
-        return self._overview
+        m = self.schema_map()
+        listing = "\n".join(f"{t['name']} ({t['rows']:,} rows)" for t in m["tables"])
+        joins = [f"{j['from'][0]}.{j['from'][1]} → {j['to'][0]}" + (f".{j['to'][1]}" if j["to"][1] else "")
+                 for j in m["joins"]]
+        return (f'<database name="{m["name"]}" dialect="{m["dialect"]}">\n<tables>\n{listing}\n</tables>\n'
+                f"<joins>\n{chr(10).join(joins) or '(none declared)'}\n</joins>\n</database>")
 
     def describe_table(self, table_name: str) -> str:
         try:

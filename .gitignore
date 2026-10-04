@@ -5,3 +5,4 @@ __pycache__/
 data/
 results*.jsonl
 .superpowers/
+.DS_Store

@@ -154,3 +154,16 @@ def test_urls_always_name_their_driver():
     assert _normalize("mysql://u:p@h/db") == "mysql+pymysql://u:p@h/db"
     assert _normalize("postgresql+psycopg2://u@h/db") == "postgresql+psycopg2://u@h/db"
     assert _normalize("sqlite:///x.db") == "sqlite:///x.db"
+
+
+def test_schema_map_feeds_the_graph(database):
+    m = database.schema_map()
+    assert m["name"] == "shop" and m["dialect"] == "SQLite"
+    assert {"name": "items", "rows": 6} in m["tables"]
+    assert m["joins"] == [{"from": ["order lines", "item_id"], "to": ["items", "id"]}]
+
+
+def test_fetch_returns_column_names_and_plain_rows(database):
+    columns, rows = database.fetch("SELECT id, name FROM items WHERE id < 3 ORDER BY id")
+    assert columns == ["id", "name"] and rows == [[1, "apple"], [2, "pear"]]
+    assert len(database.fetch("SELECT id FROM items", limit=2)[1]) == 2

@@ -139,7 +139,7 @@ def _messages(question: str, evidence: str, overview: str, dialect: str = "SQLit
     return [{"role": "system", "content": SYSTEM.replace("<DIALECT>", dialect)}, {"role": "user", "content": user}]
 
 
-def _explore(client, messages: list[dict], db: Database, result: Result, max_steps: int) -> None:
+def _explore(client, messages: list[dict], db: Database, result: Result, max_steps: int, on_step=None) -> None:
     for _ in range(max_steps + 1):
         resp = client.chat.completions.create(
             model=prices.MODEL, reasoning_effort=prices.REASONING_EFFORT, messages=messages, tools=TOOLS)
@@ -162,6 +162,8 @@ def _explore(client, messages: list[dict], db: Database, result: Result, max_ste
         for c in msg.tool_calls:
             args, output = call_tool(db, c.function.name, c.function.arguments)
             result.steps.append({"tool": c.function.name, "args": args, "output": output})
+            if on_step:
+                on_step(result.steps[-1])
             messages.append({"role": "tool", "tool_call_id": c.id, "content": output})
     result.exhausted = True
     messages.append({"role": "user", "content": FINAL_TURN})
@@ -184,11 +186,11 @@ def _returns_rows(db: Database, sql: str) -> bool:
 
 
 def agent(client, question: str, evidence: str, db: Database,
-          max_steps: int = 15, critic_rounds: int = 0) -> Result:
+          max_steps: int = 15, critic_rounds: int = 0, on_step=None) -> Result:
     overview = db.overview()
     messages = _messages(question, evidence, overview, db.dialect)
     result = Result()
-    _explore(client, messages, db, result, max_steps)
+    _explore(client, messages, db, result, max_steps, on_step)
     if critic_rounds:
         result.sql_before_critic = result.sql
     for _ in range(critic_rounds):
@@ -208,7 +210,7 @@ def agent(client, question: str, evidence: str, db: Database,
         previous = result.sql
         messages.append({"role": "assistant", "content": f"<sql>{previous}</sql>"})
         messages.append({"role": "user", "content": turn})
-        _explore(client, messages, db, result, len(result.steps) + 5)
+        _explore(client, messages, db, result, len(result.steps) + 5, on_step)
         if _returns_rows(db, previous) and not _returns_rows(db, result.sql):
             result.sql, result.reverted = previous, True
             break

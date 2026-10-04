@@ -104,3 +104,15 @@ def test_system_prompt_names_the_dialect_and_has_no_sqlite_only_functions(databa
     agent(client, "q", "", database)
     system = client.calls[0]["messages"][0]["content"]
     assert "expert SQLite analyst" in system and "strftime" not in system
+
+
+def test_on_step_sees_every_tool_call_in_order(database):
+    seen = []
+    client = FakeClient([
+        reply(tool_calls=[call("describe_table", {"table": "regions"}, "a"),
+                          call("column_values", {"table": "regions", "column": "name", "search": "x"}, "b")]),
+        reply("<sql>SELECT 1</sql>"),
+    ])
+    agent(client, "q", "", database, on_step=seen.append)
+    assert [s["tool"] for s in seen] == ["describe_table", "column_values"]
+    assert seen[0]["output"].startswith("table regions:")
