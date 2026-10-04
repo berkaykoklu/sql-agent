@@ -1,11 +1,13 @@
+import re
 import sqlite3
 import time
+import warnings
 from contextlib import contextmanager
 from datetime import date, datetime, time as dtime
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import bindparam, column, create_engine, distinct, func, inspect, select, table
+from sqlalchemy import bindparam, column, create_engine, distinct, event, func, inspect, select, table
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
@@ -23,6 +25,27 @@ _READ_ACTIONS = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNC
 
 class QueryError(Exception):
     pass
+
+
+_LEADING = re.compile(r"^\s*(?:(?:--[^\n]*\n|/\*.*?\*/)\s*)*\(*\s*(SELECT|WITH)\b", re.I | re.S)
+
+
+def check_single_select(sql: str) -> None:
+    """Server dialects run multi-statement strings (psycopg does), so only one SELECT/WITH may reach them."""
+    body = sql.strip().rstrip(";").rstrip()
+    if ";" in body:
+        raise QueryError("only one statement is allowed")
+    if not _LEADING.match(body):
+        raise QueryError("only SELECT or WITH queries are allowed")
+
+
+def _normalize(url: str) -> str:
+    # always name the driver: sources disagree on the default for postgresql://
+    for plain, full in (("postgresql://", "postgresql+psycopg://"), ("postgres://", "postgresql+psycopg://"),
+                        ("mysql://", "mysql+pymysql://")):
+        if url.startswith(plain):
+            return full + url[len(plain):]
+    return url
 
 
 def db_file(db_id: str) -> Path:
@@ -72,8 +95,12 @@ class Database:
         if _creator is not None:
             self.engine = create_engine("sqlite://", creator=_creator, poolclass=NullPool)
         else:
-            self.engine = create_engine(url, pool_pre_ping=True)
+            self.engine = create_engine(_normalize(url), pool_pre_ping=True)
         self.kind = self.engine.dialect.name
+        if self.kind in ("mysql", "mariadb"):
+            event.listen(self.engine, "connect", self._mysql_session)
+        elif self.kind not in ("sqlite", "postgresql"):
+            warnings.warn(f"{self.kind}: no read-only guard; safety relies on the database user's grants")
         self.dialect = DIALECTS.get(self.kind, self.kind)
         self.name = _name or self.engine.url.database or self.kind
         self.catalog = catalog
@@ -100,6 +127,15 @@ class Database:
 
     # --- execution -------------------------------------------------------------------------------
 
+    def _mysql_session(self, dbapi_conn, _record) -> None:
+        cur = dbapi_conn.cursor()
+        cur.execute("SET SESSION TRANSACTION READ ONLY")
+        if "mariadb" in str(dbapi_conn.get_server_info()).lower():
+            cur.execute(f"SET SESSION max_statement_time = {self.timeout}")  # seconds on MariaDB
+        else:
+            cur.execute(f"SET SESSION max_execution_time = {int(self.timeout * 1000)}")
+        cur.close()
+
     @contextmanager
     def _guard(self, conn, deadline: float):
         if self.kind != "sqlite":
@@ -116,16 +152,24 @@ class Database:
             raw.set_authorizer(None)
 
     def _rows(self, statement) -> list[tuple]:
+        if isinstance(statement, str) and self.kind != "sqlite":
+            check_single_select(statement)  # SQLite has the authorizer and its driver runs one statement only
         deadline = time.monotonic() + self.timeout
         try:
-            with self.engine.connect() as conn, self._guard(conn, deadline):
-                # model SQL goes to the driver untouched: text() would read ':23' in '1:23' as a parameter
-                result = conn.exec_driver_sql(statement) if isinstance(statement, str) else conn.execute(statement)
-                return [tuple(r) for r in result.all()]
+            with self.engine.connect() as conn:
+                if self.kind == "postgresql":
+                    conn = conn.execution_options(postgresql_readonly=True)
+                with conn.begin(), self._guard(conn, deadline):
+                    if self.kind == "postgresql":
+                        conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(self.timeout * 1000)}")
+                    # model SQL goes to the driver untouched: text() would read ':23' in '1:23' as a parameter
+                    result = conn.exec_driver_sql(statement) if isinstance(statement, str) else conn.execute(statement)
+                    return [tuple(r) for r in result.all()]
         except SQLAlchemyError as e:
-            if time.monotonic() > deadline:
+            message = str(getattr(e, "orig", None) or e)
+            if time.monotonic() > deadline or "statement timeout" in message or "execution time exceeded" in message:
                 raise QueryError("timeout") from e
-            raise QueryError(str(getattr(e, "orig", None) or e)) from e
+            raise QueryError(message.strip()) from e
 
     def execute(self, sql: str) -> list[tuple]:
         return self._rows(sql)

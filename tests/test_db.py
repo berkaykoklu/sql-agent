@@ -123,3 +123,34 @@ def test_execute_still_allows_ctes_recursion_and_window_functions(database):
     sql = ("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 3) "
            "SELECT x, ROW_NUMBER() OVER (ORDER BY x DESC) FROM c")
     assert sorted(database.execute(sql)) == [(1, 3), (2, 2), (3, 1)]
+
+
+def test_check_single_select_allows_one_select_or_with():
+    from sqlagent.db import check_single_select
+    for ok in ("SELECT 1;", "  select 1 ; ", "WITH a AS (SELECT 1) SELECT * FROM a", "/* c */ (SELECT 1)",
+               "-- note\nSELECT 2"):
+        check_single_select(ok)
+    for bad in ("SELECT 1; DROP TABLE x", "SET TRANSACTION READ WRITE", "DELETE FROM t", "",
+                "VACUUM INTO 'x'", "SELECT 1;\nSELECT 2",
+                "SELECT 'a;b'"):  # conservative: a ';' inside a literal is rejected too; the model can rewrite
+        with pytest.raises(QueryError):
+            check_single_select(bad)
+
+
+def test_plain_makes_driver_types_readable():
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    from sqlagent.db import _plain
+    assert _plain(Decimal("2.50")) == 2.5 and _plain(Decimal("10")) == 10
+    assert _plain(date(2020, 1, 2)) == "2020-01-02" and _plain(datetime(2020, 1, 2, 3, 4)) == "2020-01-02T03:04:00"
+    assert _plain(b"\xffok") == "�ok" and _plain("x") == "x"
+
+
+def test_urls_always_name_their_driver():
+    from sqlagent.db import _normalize
+    assert _normalize("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+    assert _normalize("postgres://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+    assert _normalize("mysql://u:p@h/db") == "mysql+pymysql://u:p@h/db"
+    assert _normalize("postgresql+psycopg2://u@h/db") == "postgresql+psycopg2://u@h/db"
+    assert _normalize("sqlite:///x.db") == "sqlite:///x.db"
