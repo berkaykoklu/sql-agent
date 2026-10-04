@@ -2,6 +2,7 @@ import argparse
 import json
 import random
 import threading
+import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
@@ -50,14 +51,16 @@ def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
     except QueryError as e:
         return row | {"status": "gold_failed", "error": str(e)}
     try:
+        start = time.monotonic()
         r = agent(client, q["question"], q["evidence"], cached_overview(db_path), db_path,
                   critic_rounds=CRITIC_ROUNDS[condition])
+        seconds = time.monotonic() - start
     except Exception as e:  # API failure after SDK retries; the next run retries this row
         return row | {"status": "error", "error": repr(e)}
     row |= {
         "status": "ok", "correct": _matches(db_path, r.sql, gold), "sql": r.sql, "steps": r.steps,
         "input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
-        "cost": r.cost, "exhausted": r.exhausted,
+        "cost": r.cost, "exhausted": r.exhausted, "seconds": round(seconds, 2),
     }
     if r.sql_before_critic is not None:
         row |= {"sql_before_critic": r.sql_before_critic, "critic": r.critic, "reverted": r.reverted,

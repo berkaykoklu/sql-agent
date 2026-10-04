@@ -57,3 +57,9 @@ def test_critic_effect_is_summarised_on_the_same_answers():
     c = summarize(rs)["explorer_critic"]["critic"]
     assert c == {"verdicts": {"REVISE": 1, "ERROR": 1, "OK": 1, "UNSURE": 1}, "acted": 2, "fixed": 1,
                  "broke": 1, "missed": 1, "reverted": 1, "acc_before": 2 / 4}
+
+
+def test_latency_median_and_p90_are_reported():
+    rs = [{"question_id": i, "condition": "explorer", "difficulty": "simple", "status": "ok", "correct": True,
+           "cost": 0.001, "exhausted": False, "steps": [], "seconds": float(i)} for i in range(1, 11)]
+    assert summarize(rs)["explorer"]["seconds"] == {"median": 5.5, "p90": 9.0}

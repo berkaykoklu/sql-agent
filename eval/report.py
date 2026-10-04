@@ -1,6 +1,7 @@
 import argparse
 import json
 import random
+import statistics
 from collections import Counter
 from pathlib import Path
 
@@ -34,6 +35,9 @@ def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0) -> dict:
             "exhausted": sum(r["exhausted"] for r in picked),
             "tools": {k: v / len(picked) for k, v in tools.items()},
         }
+        timed = sorted(r["seconds"] for r in picked if "seconds" in r)
+        if timed:
+            out[c]["seconds"] = {"median": statistics.median(timed), "p90": timed[int(0.9 * (len(timed) - 1))]}
         reviewed = [r for r in picked if "correct_before_critic" in r]
         if reviewed:
             acted = [any(v["verdict"] in ("REVISE", "ERROR") for v in r["critic"]) for r in reviewed]
@@ -100,6 +104,9 @@ def main() -> None:
     for c in s["conditions"]:
         if s[c]["tools"]:
             print(f"{c} tools/question: " + " · ".join(f"{k} {v:.2f}" for k, v in sorted(s[c]["tools"].items())))
+    for c in s["conditions"]:
+        if "seconds" in s[c]:
+            print(f"{c} seconds/question: median {s[c]['seconds']['median']:.1f}, p90 {s[c]['seconds']['p90']:.1f}")
     for c in s["conditions"]:
         if "critic" in s[c]:
             k = s[c]["critic"]

@@ -97,3 +97,8 @@ def test_critic_condition_scores_the_answer_before_and_after_the_critic(db):
     row = evaluate(client, q, "explorer_critic", db)
     assert row["correct"] is True and row["correct_before_critic"] is False
     assert [c["verdict"] for c in row["critic"]] == ["REVISE", "OK"] and row["reverted"] is False
+
+
+def test_rows_record_how_long_the_agent_took(db):
+    row = evaluate(FakeClient([reply("<sql>SELECT 1</sql>")]), question("SELECT 1"), "explorer", db)
+    assert isinstance(row["seconds"], float) and 0 <= row["seconds"] < 5
