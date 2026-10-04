@@ -76,3 +76,12 @@ def test_agent_survives_malformed_tool_arguments(db):
     r = agent(client, "q", "", "schema", db)
     assert r.sql == "SELECT 1" and r.steps == []
     assert client.calls[1]["messages"][-1]["content"].startswith("ERROR: arguments")
+
+
+def test_verify_adds_one_instruction_and_nothing_else(db):
+    plain, verify = FakeClient([reply("SELECT 1")]), FakeClient([reply("SELECT 1")])
+    agent(plain, "q", "", "schema", db)
+    agent(verify, "q", "", "schema", db, verify=True)
+    p, v = plain.calls[0]["messages"], verify.calls[0]["messages"]
+    assert v[1] == p[1]
+    assert v[0]["content"].startswith(p[0]["content"]) and "run_sql" in v[0]["content"][len(p[0]["content"]):]

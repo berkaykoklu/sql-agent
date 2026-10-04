@@ -12,7 +12,7 @@ from openai import OpenAI
 from sqlagent.agent import agent, one_shot
 from sqlagent.db import QUESTIONS, QueryError, db_file, execute, same_result, schema
 
-CONDITIONS = ("one_shot", "agent")
+CONDITIONS = ("one_shot", "one_shot_repeat", "agent", "agent_verify")
 PILOT = {"simple": 6, "moderate": 10, "challenging": 4}
 
 
@@ -50,10 +50,10 @@ def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
         return row | {"status": "gold_failed", "error": str(e)}
     try:
         s = cached_schema(db_path)
-        if condition == "one_shot":
+        if condition.startswith("one_shot"):
             r = one_shot(client, q["question"], q["evidence"], s)
         else:
-            r = agent(client, q["question"], q["evidence"], s, db_path)
+            r = agent(client, q["question"], q["evidence"], s, db_path, verify=condition == "agent_verify")
     except Exception as e:  # API failure after SDK retries; the next run retries this row
         return row | {"status": "error", "error": repr(e)}
     try:

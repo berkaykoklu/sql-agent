@@ -10,6 +10,7 @@ SYSTEM = (
     "You are an expert SQLite analyst. Answer the question with a single SQLite SELECT "
     "statement over the database below. Reply with only the SQL in a ```sql block."
 )
+VERIFY = " Before answering, always run your query with run_sql and check the result."
 TOOLS = [{
     "type": "function",
     "function": {
@@ -48,9 +49,10 @@ def extract_sql(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
-def _messages(question: str, evidence: str, schema: str) -> list[dict]:
+def _messages(question: str, evidence: str, schema: str, verify: bool = False) -> list[dict]:
     user = f"Database schema:\n{schema}\n\nHint: {evidence or 'none'}\n\nQuestion: {question}"
-    return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+    system = SYSTEM + VERIFY if verify else SYSTEM
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 def _create(client, messages: list[dict], tools: list[dict] | None = None):
@@ -67,8 +69,9 @@ def one_shot(client, question: str, evidence: str, schema: str) -> Result:
     return result
 
 
-def agent(client, question: str, evidence: str, schema: str, db_path: Path, max_steps: int = 5) -> Result:
-    messages = _messages(question, evidence, schema)
+def agent(client, question: str, evidence: str, schema: str, db_path: Path,
+          max_steps: int = 5, verify: bool = False) -> Result:
+    messages = _messages(question, evidence, schema, verify)
     result = Result()
     for _ in range(max_steps + 1):
         resp = _create(client, messages, TOOLS)

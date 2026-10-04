@@ -12,7 +12,12 @@ def reply(content):
 class FakeClient:
     def __init__(self, replies):
         self.replies = list(replies)
-        self.chat = NS(completions=NS(create=lambda **kw: self.replies.pop(0)))
+        self.calls = []
+        self.chat = NS(completions=NS(create=self._create))
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.replies.pop(0)
 
 
 def question(gold):
@@ -69,3 +74,14 @@ def test_pilot_sample_is_stratified_and_deterministic():
     sample = pilot_sample(qs)
     assert [q["difficulty"] for q in sample].count("moderate") == 10 and len(sample) == 20
     assert sample == pilot_sample(qs)
+
+
+def test_every_condition_dispatches_to_the_right_call(db):
+    shapes = {}
+    for condition in ("one_shot", "one_shot_repeat", "agent", "agent_verify"):
+        client = FakeClient([reply("SELECT 1")])
+        row = evaluate(client, question("SELECT 1"), condition, db)
+        assert row["status"] == "ok" and row["condition"] == condition
+        shapes[condition] = ("tools" in client.calls[0], "always run" in client.calls[0]["messages"][0]["content"])
+    assert shapes == {"one_shot": (False, False), "one_shot_repeat": (False, False),
+                      "agent": (True, False), "agent_verify": (True, True)}
