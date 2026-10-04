@@ -281,5 +281,13 @@ def bird_sqlite(db_id: str, tables: list[str] | None = None, timeout: float = 10
                            tables=tables, timeout=timeout)
 
 
+def bird(db_id: str, url: str | None = None, timeout: float = 10.0) -> Database:
+    """A BIRD database: the local SQLite copy, or the same tables on a server (e.g. the PostgreSQL dump)."""
+    sqlite = bird_sqlite(db_id, timeout=timeout)
+    if url is None:
+        return sqlite
+    return Database(url, catalog=sqlite.catalog, tables=sqlite.table_names, timeout=timeout)
+
+
 def same_result(pred: list[tuple], gold: list[tuple]) -> bool:
     return set(pred) == set(gold)  # official BIRD EX: ignores order and duplicates

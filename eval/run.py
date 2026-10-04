@@ -11,8 +11,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from sqlagent.agent import agent
-from sqlagent.catalog import from_bird_csv
-from sqlagent.db import QUESTIONS, Database, QueryError, bird_sqlite, db_file, same_result
+from sqlagent.db import QUESTIONS, Database, QueryError, bird, same_result
 
 # critic off by default: on 300 held-out questions it fixed 2 answers and broke 5
 CONDITIONS = ("explorer",)
@@ -21,12 +20,7 @@ CRITIC_ROUNDS = {"explorer": 0, "explorer_critic": 2}
 
 @lru_cache(maxsize=None)
 def database_for(db_id: str, url: str | None = None) -> Database:
-    """One Database per BIRD db_id; with a URL (e.g. PostgreSQL) it is scoped to that db_id's tables."""
-    sqlite = bird_sqlite(db_id)
-    if url is None:
-        return sqlite
-    return Database(url, catalog=from_bird_csv(db_file(db_id).parent / "database_description"),
-                    tables=sqlite.table_names)
+    return bird(db_id, url)  # one per db_id, so each is reflected once
 
 
 def sample_by_difficulty(questions: list[dict], n: int, seed: int = 0) -> list[dict]:
