@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sql·agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ease:cubic-bezier(.32,.72,0,1);--spring:cubic-bezier(.34,1.56,.64,1);--blue:#7c8cff;--amber:#f5a524;--ink:#e8e9f3;--mute:#7d82a3;--line:rgba(255,255,255,.07)}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#050507;color:var(--ink);font:15px/1.55 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100dvh;overflow-x:hidden}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+.orb{position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0}
+.island{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 18px;border-radius:999px;background:rgba(18,19,28,.72);backdrop-filter:blur(18px);box-shadow:0 12px 40px -14px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.07);white-space:nowrap}
+.brand{font:700 15px Geist;letter-spacing:-.01em;margin-right:8px}.brand b{color:var(--blue)}
+.status{display:flex;align-items:center;gap:8px;font:500 12px Geist;color:#aab0d0;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.04)}
+.status i{width:7px;height:7px;border-radius:50%;background:#555a78}.status.ok i{background:#4ade80;box-shadow:0 0 10px #4ade80}
+.pillbtn{all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;font:600 13px Geist;padding:6px 6px 6px 14px;border-radius:999px;background:#fff;color:#0a0a10;transition:transform .4s var(--ease)}
+.pillbtn:active{transform:scale(.98)}
+.pillbtn i{width:24px;height:24px;border-radius:50%;background:#0a0a10;color:#fff;display:grid;place-items:center;font-style:normal;font-size:12px;transition:transform .5s var(--ease)}
+.pillbtn:hover i{transform:translate(2px,-1px) scale(1.06)}
+.wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:108px 24px 64px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;border-radius:999px;padding:5px 12px;font:500 10.5px Geist;letter-spacing:.2em;text-transform:uppercase;color:#aab0ff;background:rgba(47,75,255,.12);box-shadow:inset 0 0 0 1px rgba(124,140,255,.25)}
+h1{font:700 clamp(28px,4vw,50px)/1.06 Geist;letter-spacing:-.035em;margin:18px 0 22px;max-width:980px;min-height:1.06em}
+h1 .dim{color:#3c4060}
+.ask{display:flex;align-items:center;gap:10px;padding:7px 7px 7px 22px;border-radius:999px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.09);margin-bottom:10px;transition:box-shadow .5s var(--ease)}
+.ask:focus-within{box-shadow:inset 0 0 0 1px rgba(124,140,255,.6),0 0 0 6px rgba(124,140,255,.08)}
+.ask input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:16px Geist}
+.ask input::placeholder{color:#555a78}
+.hintrow{display:flex;gap:10px;align-items:center;margin:0 0 30px 22px;color:var(--mute);font-size:13px}
+.hintrow input{flex:1;max-width:620px;background:none;border:0;border-bottom:1px solid var(--line);color:#aab0d0;font:13px Geist;padding:4px 0;outline:0}
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.shell{padding:6px;border-radius:28px;background:rgba(255,255,255,.03);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.core{border-radius:22px;background:linear-gradient(180deg,#0d0f1a,#090a12);box-shadow:inset 0 1px 1px rgba(255,255,255,.07);padding:20px;height:100%;min-height:120px}
+.lbl{font:500 10.5px Geist;letter-spacing:.18em;text-transform:uppercase;color:#6c7192;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px}
+.lbl span:last-child{letter-spacing:.06em;text-transform:none;color:#8a8fb0}
+.rev{opacity:0;transform:translateY(16px);filter:blur(6px);transition:opacity .9s var(--ease),transform .9s var(--ease),filter .9s var(--ease)}.rev.in{opacity:1;transform:none;filter:none}
+/* graph */
+#graph{width:100%;height:auto;display:block}
+#graph text{font:500 12px "Geist Mono";fill:#9aa0c8;pointer-events:none}
+.node rect{fill:#11142a;stroke:rgba(140,155,255,.18);transition:fill .7s var(--ease),stroke .7s var(--ease)}
+.node.seen rect{stroke:rgba(140,155,255,.45)}
+.node.hot rect{fill:#1b2160;stroke:var(--blue)}.node.hot text{fill:#fff}
+.edge{stroke:rgba(140,155,255,.14);stroke-width:1.2;fill:none;transition:stroke .6s var(--ease)}.edge.live{stroke:var(--blue);stroke-width:1.8}
+.chip{transition:opacity .6s var(--ease),transform .7s var(--spring)}
+.chip rect{fill:#2a1d05;stroke:var(--amber)}.chip text{fill:#ffcf7a!important}
+/* steps */
+.rail{max-height:420px;overflow:auto;padding-right:4px}
+.s{padding:10px 0;border-bottom:1px solid var(--line);animation:in .7s var(--ease) both}
+@keyframes in{from{opacity:0;transform:translateY(10px)}}
+.s summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline}
+.s summary::-webkit-details-marker{display:none}
+.tag{font:500 11px "Geist Mono";padding:3px 8px;border-radius:7px;background:rgba(124,140,255,.12);color:#aab4ff;white-space:nowrap}
+.arg{font:12px "Geist Mono";color:#9aa0c8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.out{font:11.5px/1.5 "Geist Mono";color:#7d84b0;white-space:pre-wrap;margin:8px 0 0;max-height:220px;overflow:auto}
+.empty{color:#4a4e6a;font-size:13px}
+/* answer */
+.big{font:700 clamp(56px,7vw,92px)/1 Geist;letter-spacing:-.05em;background:linear-gradient(180deg,#fff,#8f9cff);-webkit-background-clip:text;background-clip:text;color:transparent;word-break:break-word}
+.bigtext{font:600 26px/1.2 Geist;letter-spacing:-.02em}
+.metric{display:flex;justify-content:space-between;color:var(--mute);font-size:13px;padding:7px 0;border-top:1px solid var(--line)}.metric b{color:var(--ink);font-weight:500}
+.sql{font:13px/1.75 "Geist Mono";color:#c8ccf0;white-space:pre-wrap;min-height:90px}
+.sql .k{color:#8f9cff}.sql .v{color:#ffcf7a}.sql .n{color:#7ee0c3}
+.tbl{overflow:auto;max-height:380px}
+table{border-collapse:collapse;font:12.5px "Geist Mono";width:100%}
+th{position:sticky;top:0;background:#0d0f1a;color:#8a8fb0;font-weight:500;text-align:left}
+th,td{padding:7px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{color:#d6d9f2}
+.err{color:#ff9b8a;font:13px "Geist Mono"}
+/* drawer */
+.veil{position:fixed;inset:0;z-index:30;background:rgba(5,5,7,.6);backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .6s var(--ease)}
+.veil.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:12px;right:12px;bottom:12px;width:min(440px,calc(100vw - 24px));z-index:31;transform:translateX(110%);transition:transform .8s var(--ease)}
+.drawer.open{transform:none}
+.drawer .core{overflow:auto}
+.drawer h2{font:700 22px Geist;letter-spacing:-.02em;margin:4px 0 18px}
+.field{margin-bottom:16px}.field label{display:block;font:500 11px Geist;letter-spacing:.14em;text-transform:uppercase;color:#6c7192;margin-bottom:8px}
+.field select,.field input[type=text]{width:100%;background:rgba(255,255,255,.04);border:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.09);border-radius:14px;color:var(--ink);font:14px Geist;padding:11px 14px;outline:0}
+.field select option{background:#0d0f1a}
+.or{color:#4a4e6a;font-size:12px;text-align:center;margin:-4px 0 12px}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:260px;overflow:auto}
+.checks label{display:flex;gap:8px;align-items:center;font:12.5px "Geist Mono";color:#aab0d0;text-transform:none;letter-spacing:0;margin:0;cursor:pointer}
+.note{font-size:12.5px;color:var(--mute);margin-top:12px}
+.close{all:unset;cursor:pointer;position:absolute;top:22px;right:24px;color:#8a8fb0;font-size:22px;line-height:1}
+@media (max-width:900px){.bento>*{grid-column:1/-1!important}.wrap{padding:96px 16px 48px}.island{left:12px;right:12px;transform:none;justify-content:space-between}.status span{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}.rev{opacity:1;transform:none;filter:none}}
+</style>
+</head>
+<body>
+<div class="orb" style="width:560px;height:560px;background:#2F4BFF;opacity:.45;top:-200px;left:-160px"></div>
+<div class="orb" style="width:460px;height:460px;background:#0ea5a4;opacity:.25;bottom:-180px;right:-120px"></div>
+
+<nav class="island">
+  <div class="brand">sql<b>·</b>agent</div>
+  <div class="status" id="status"><i></i><span id="statusText">not connected</span></div>
+  <button class="pillbtn" id="openDrawer">Connection <i>↗</i></button>
+</nav>
+
+<main class="wrap">
+  <span class="eyebrow rev" id="eyebrow">connect a database to start</span>
+  <h1 class="rev" id="headline"><span class="dim">Ask your database anything.</span></h1>
+  <form class="ask rev" id="askForm" autocomplete="off">
+    <input id="q" placeholder="e.g. How many accounts are in the East Bohemia region?" disabled>
+    <button class="pillbtn" id="askBtn" disabled>Ask <i>↗</i></button>
+  </form>
+  <div class="hintrow rev"><span>hint</span><input id="evidence" placeholder="optional: definitions the agent should use (like BIRD's evidence)"></div>
+
+  <section class="bento">
+    <div class="shell rev" style="grid-column:span 8"><div class="core"><div class="lbl"><span>Live schema</span><span id="graphStat">—</span></div><svg id="graph" viewBox="0 0 760 380"></svg></div></div>
+    <div class="shell rev" style="grid-column:span 4"><div class="core"><div class="lbl"><span>Agent steps</span><span id="stepCount">0</span></div><div class="rail" id="rail"><div class="empty">Tool calls appear here as the agent makes them.</div></div></div></div>
+    <div class="shell rev" style="grid-column:span 4"><div class="core"><div class="lbl"><span>Answer</span><span id="rowCount"></span></div><div id="answer"><div class="empty">—</div></div>
+      <div style="margin-top:14px"><div class="metric"><span>time</span><b id="mTime">—</b></div><div class="metric"><span>tool calls</span><b id="mSteps">—</b></div><div class="metric"><span>model cost</span><b id="mCost">—</b></div></div></div></div>
+    <div class="shell rev" style="grid-column:span 8"><div class="core"><div class="lbl"><span>Final SQL</span><span id="dialect"></span></div><div class="sql" id="sql"></div></div></div>
+    <div class="shell rev" id="tableShell" style="grid-column:1/-1;display:none"><div class="core"><div class="lbl"><span>Result</span><span id="tableNote"></span></div><div class="tbl" id="table"></div></div></div>
+  </section>
+</main>
+
+<div class="veil" id="veil"></div>
+<aside class="drawer" id="drawer"><div class="shell" style="height:100%"><div class="core" style="position:relative">
+  <button class="close" id="closeDrawer" aria-label="close">×</button>
+  <h2>Connection</h2>
+  <div class="field"><label for="source">Ready-made databases</label><select id="source"><option value="">choose…</option></select></div>
+  <div class="or">or</div>
+  <div class="field"><label for="url">Your own SQLAlchemy URL</label><input type="text" id="url" placeholder="postgresql+psycopg://user:pw@host:5432/db"></div>
+  <div class="field"><label for="catalog">Catalog (optional JSON)</label><input type="file" id="catalog" accept="application/json" style="color:#8a8fb0;font-size:12px"></div>
+  <button class="pillbtn" id="connectBtn">Connect <i>↗</i></button>
+  <div class="note" id="connectNote">Read-only: only single SELECT queries reach the database.</div>
+  <div class="field" style="margin-top:22px"><label>Tables the agent may see</label><div class="checks" id="checks"><div class="empty">connect first</div></div></div>
+  <button class="pillbtn" id="scopeBtn" style="display:none">Apply table scope <i>↗</i></button>
+</div></div></aside>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let session = null, schema = null, lastConnect = null, es = null;
+let nodes = {}, edges = [];
+
+/* ---------- reveal ---------- */
+document.querySelectorAll(".rev").forEach((el, i) => setTimeout(() => el.classList.add("in"), 80 + i * 90));
+
+/* ---------- drawer ---------- */
+const openDrawer = () => { $("drawer").classList.add("open"); $("veil").classList.add("open"); };
+const closeDrawer = () => { $("drawer").classList.remove("open"); $("veil").classList.remove("open"); };
+$("openDrawer").onclick = openDrawer; $("closeDrawer").onclick = closeDrawer; $("veil").onclick = closeDrawer;
+
+fetch("/api/sources").then(r => r.json()).then(({sources}) => {
+  $("source").innerHTML = '<option value="">choose…</option>' + sources.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join("");
+});
+
+async function connect(body) {
+  $("connectNote").textContent = "connecting…";
+  const r = await fetch("/api/connect", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const data = await r.json();
+  if (!r.ok) { $("connectNote").innerHTML = `<span class="err">${esc(data.detail)}</span>`; return; }
+  session = data.session; schema = data.schema; lastConnect = body;
+  $("connectNote").textContent = `Connected to ${schema.name} (${schema.dialect}). Read-only.`;
+  $("status").classList.add("ok");
+  $("statusText").textContent = `${schema.dialect} · ${schema.name} · ${schema.tables.length} tables`;
+  $("eyebrow").textContent = `${schema.dialect} · ${schema.name} · ${schema.tables.length} tables · read-only`;
+  $("dialect").textContent = schema.dialect;
+  $("q").disabled = false; $("askBtn").disabled = false; $("q").focus();
+  if (!body.tables) {
+    $("checks").innerHTML = schema.tables.map(t => `<label><input type="checkbox" checked value="${esc(t.name)}">${esc(t.name)}</label>`).join("");
+    $("scopeBtn").style.display = "flex";
+  }
+  drawGraph(); resetRun(); closeDrawer();
+}
+$("connectBtn").onclick = async () => {
+  const body = {};
+  if ($("url").value.trim()) body.url = $("url").value.trim(); else if ($("source").value) body.source = $("source").value;
+  else { $("connectNote").innerHTML = '<span class="err">choose a database or enter a URL</span>'; return; }
+  const f = $("catalog").files[0];
+  if (f) { try { body.catalog = JSON.parse(await f.text()); } catch { $("connectNote").innerHTML = '<span class="err">catalog is not valid JSON</span>'; return; } }
+  connect(body);
+};
+$("scopeBtn").onclick = () => {
+  const tables = [...$("checks").querySelectorAll("input:checked")].map(i => i.value);
+  if (lastConnect && tables.length) connect({...lastConnect, tables});
+};
+
+/* ---------- graph ---------- */
+function drawGraph() {
+  const g = $("graph"), W = 760, H = 380, ts = schema.tables, n = ts.length;
+  nodes = {};
+  ts.forEach((t, i) => {
+    const a = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
+    const x = n === 1 ? W / 2 : W / 2 + Math.cos(a) * (W / 2 - 110), y = n === 1 ? H / 2 : H / 2 + Math.sin(a) * (H / 2 - 50);
+    nodes[t.name.toLowerCase()] = {name: t.name, rows: t.rows, x, y, w: Math.max(90, t.name.length * 7.6 + 30)};
+  });
+  const pairs = new Set();
+  edges = [];
+  schema.joins.forEach(j => {
+    const a = j.from[0].toLowerCase(), b = j.to[0].toLowerCase(), key = [a, b].sort().join("|");
+    if (a !== b && nodes[a] && nodes[b] && !pairs.has(key)) { pairs.add(key); edges.push([a, b]); }
+  });
+  const curve = ([a, b]) => { const p = nodes[a], q = nodes[b], mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+    return `M${p.x} ${p.y} Q ${mx + (W / 2 - mx) * .35} ${my + (H / 2 - my) * .35} ${q.x} ${q.y}`; };
+  g.innerHTML = edges.map((e, i) => `<path class="edge" id="edge${i}" d="${curve(e)}"/>`).join("") +
+    Object.values(nodes).map((p, i) => `<g class="node" id="node${i}" data-key="${esc(p.name.toLowerCase())}">
+      <rect x="${p.x - p.w / 2}" y="${p.y - 17}" width="${p.w}" height="34" rx="11"/>
+      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${esc(p.name)}</text></g>`).join("") +
+    `<g id="chips"></g><circle id="pulse" r="5" fill="#fff" opacity="0" style="filter:drop-shadow(0 0 8px #7c8cff)"/>`;
+  Object.values(nodes).forEach((p, i) => p.el = $("node" + i));
+  $("graphStat").textContent = `${n} tables · ${edges.length} joins`;
+}
+const nodeOf = name => nodes[String(name || "").toLowerCase()];
+function heat(key) { Object.values(nodes).forEach(p => p.el.classList.remove("hot")); const p = nodeOf(key); if (p) p.el.classList.add("hot", "seen"); }
+function chip(key, text) {
+  const p = nodeOf(key); if (!p || !text) return;
+  const w = Math.min(260, text.length * 7.4 + 22), x = Math.min(760 - w - 4, Math.max(4, p.x - w / 2)), y = p.y + (p.y > 190 ? -54 : 24);
+  const c = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  c.setAttribute("class", "chip");
+  c.innerHTML = `<rect x="${x}" y="${y}" width="${w}" height="26" rx="9"/><text x="${x + w / 2}" y="${y + 17}" text-anchor="middle">${esc(text)}</text>`;
+  c.style.opacity = 0; c.style.transform = "translateY(6px)";
+  $("chips").appendChild(c); requestAnimationFrame(() => { c.style.opacity = 1; c.style.transform = "none"; });
+}
+function travel(sql) {
+  const hit = Object.keys(nodes).filter(k => new RegExp(`(^|[^a-z0-9_])["\`]?${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["\`]?([^a-z0-9_]|$)`, "i").test(sql));
+  hit.forEach(k => nodes[k].el.classList.add("hot", "seen"));
+  edges.forEach((e, i) => {
+    if (!(hit.includes(e[0]) && hit.includes(e[1]))) return;
+    const path = $("edge" + i); path.classList.add("live");
+    if (reduced) return;
+    const pulse = $("pulse"), L = path.getTotalLength(), t0 = performance.now();
+    pulse.setAttribute("opacity", "1");
+    const f = t => { const k = Math.min(1, (t - t0) / 900), pt = path.getPointAtLength(L * k);
+      pulse.setAttribute("cx", pt.x); pulse.setAttribute("cy", pt.y); if (k < 1) requestAnimationFrame(f); else pulse.setAttribute("opacity", "0"); };
+    requestAnimationFrame(f);
+  });
+}
+
+/* ---------- run ---------- */
+function resetRun() {
+  $("rail").innerHTML = '<div class="empty">Tool calls appear here as the agent makes them.</div>';
+  $("stepCount").textContent = "0"; $("answer").innerHTML = '<div class="empty">—</div>'; $("rowCount").textContent = "";
+  ["mTime", "mSteps", "mCost"].forEach(id => $(id).textContent = "—");
+  $("sql").innerHTML = ""; $("tableShell").style.display = "none";
+  if (schema) drawGraph();
+}
+function addStep(s, i) {
+  if (i === 0) $("rail").innerHTML = "";
+  const a = s.args || {};
+  const arg = s.tool === "run_sql" ? a.query : s.tool === "column_values" ? `${a.table}.${a.column}${a.search ? ` ~ '${a.search}'` : ""}` : a.table;
+  const d = document.createElement("details"); d.className = "s";
+  d.innerHTML = `<summary><span class="tag">${esc(s.tool)}</span><span class="arg">${esc(arg)}</span></summary><div class="out">${esc(s.output)}</div>`;
+  $("rail").appendChild(d); $("rail").scrollTop = $("rail").scrollHeight; $("stepCount").textContent = i + 1;
+  if (s.tool === "describe_table") heat(a.table);
+  if (s.tool === "column_values") { heat(a.table); const first = (s.output.split("\n")[1] || "").replace(/ \(\d+\)$/, ""); if (!s.output.startsWith("ERROR")) chip(a.table, first); }
+  if (s.tool === "run_sql" && a.query) travel(a.query);
+}
+const KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AND|OR|NOT|IN|AS|GROUP|BY|ORDER|LIMIT|OFFSET|HAVING|COUNT|SUM|AVG|MIN|MAX|DISTINCT|CASE|WHEN|THEN|ELSE|END|CAST|WITH|UNION|DESC|ASC|IS|NULL|LIKE|ILIKE|BETWEEN|REAL)\b/gi;
+const highlight = sql => esc(sql).replace(/'[^']*'/g, m => `<span class="v">${m}</span>`).replace(KW, m => `<span class="k">${m}</span>`).replace(/\b\d+(\.\d+)?\b/g, m => `<span class="n">${m}</span>`);
+function typeSQL(sql) {
+  const el = $("sql");
+  if (reduced) { el.innerHTML = highlight(sql); return; }
+  let i = 0; const step = () => { i = Math.min(sql.length, i + 3); el.innerHTML = highlight(sql.slice(0, i)); if (i < sql.length) setTimeout(step, 12); };
+  step();
+}
+function countUp(el, to) {
+  if (reduced || !Number.isFinite(to)) { el.textContent = to; return; }
+  const dec = Number.isInteger(to) ? 0 : 2, t0 = performance.now();
+  const f = t => { const p = Math.min(1, (t - t0) / 900), e = 1 - Math.pow(1 - p, 4); el.textContent = (to * e).toLocaleString(undefined, {maximumFractionDigits: dec}); if (p < 1) requestAnimationFrame(f); };
+  requestAnimationFrame(f);
+}
+function showFinal(f) {
+  $("mTime").textContent = `${f.seconds} s`; $("mSteps").textContent = f.steps + (f.exhausted ? " (cap)" : "");
+  $("mCost").textContent = `$${f.cost.toFixed(4)}`;
+  typeSQL(f.sql || "(no SQL)");
+  if (f.error) { $("answer").innerHTML = `<div class="err">${esc(f.error)}</div>`; return; }
+  $("rowCount").textContent = `${f.rows.length}${f.rows.length === 50 ? "+" : ""} row${f.rows.length === 1 ? "" : "s"}`;
+  if (f.rows.length === 1 && f.columns.length === 1) {
+    const v = f.rows[0][0];
+    if (typeof v === "number") { $("answer").innerHTML = '<div class="big" id="bigNum">0</div>'; countUp($("bigNum"), v); }
+    else $("answer").innerHTML = `<div class="bigtext">${esc(v)}</div>`;
+  } else {
+    $("answer").innerHTML = `<div class="bigtext">${f.rows.length ? `${f.rows.length}${f.rows.length === 50 ? "+" : ""} rows` : "no rows"}</div>`;
+  }
+  if (f.rows.length && !(f.rows.length === 1 && f.columns.length === 1)) {
+    $("table").innerHTML = `<table><thead><tr>${f.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+      f.rows.map(r => `<tr>${r.map(v => `<td>${v === null ? '<span style="color:#4a4e6a">NULL</span>' : esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    $("tableNote").textContent = f.rows.length === 50 ? "first 50 rows" : "";
+    $("tableShell").style.display = "block";
+  }
+}
+$("askForm").onsubmit = e => {
+  e.preventDefault();
+  const q = $("q").value.trim(); if (!q || !session) return;
+  if (es) es.close();
+  resetRun(); $("headline").textContent = q; $("graphStat").textContent = "exploring…";
+  $("askBtn").disabled = true;
+  let i = 0;
+  es = new EventSource(`/api/ask?${new URLSearchParams({session, q, evidence: $("evidence").value})}`);
+  es.addEventListener("step", ev => addStep(JSON.parse(ev.data), i++));
+  es.addEventListener("final", ev => { es.close(); $("askBtn").disabled = false; $("graphStat").textContent = "done"; showFinal(JSON.parse(ev.data)); });
+  es.addEventListener("error", ev => {  // our own error event carries data; a dropped connection does not
+    es.close(); $("askBtn").disabled = false; $("graphStat").textContent = "stopped";
+    $("answer").innerHTML = `<div class="err">${esc(ev.data ? JSON.parse(ev.data).message : "connection lost; connect again")}</div>`;
+  });
+};
+</script>
+</body>
+</html>
