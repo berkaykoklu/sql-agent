@@ -7,10 +7,11 @@ def test_heldout_excludes_minidev_ids_and_repeated_question_texts():
             {"question_id": 2, "question": "  how many CARDS? ", "difficulty": "simple"}]
            + [{"question_id": i, "question": f"q{i}", "difficulty": d}
               for i, d in zip(range(3, 103), ["simple"] * 50 + ["moderate"] * 30 + ["challenging"] * 20)])
-    picked = heldout(dev, minidev, 10)
+    picked = heldout(dev, minidev, {"simple": 5, "moderate": 3, "challenging": 50})
     assert {q["question_id"] for q in picked}.isdisjoint({1, 2})
-    assert len(picked) == 10 and [q["difficulty"] for q in picked].count("simple") == 5
-    assert picked == heldout(dev, minidev, 10)
+    counts = [q["difficulty"] for q in picked]
+    assert (counts.count("simple"), counts.count("moderate"), counts.count("challenging")) == (5, 3, 20)
+    assert picked == heldout(dev, minidev, {"simple": 5, "moderate": 3, "challenging": 50})
 
 
 def test_unseen_drops_minidev_ids_and_repeated_texts_deterministically():
