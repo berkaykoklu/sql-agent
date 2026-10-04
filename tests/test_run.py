@@ -88,10 +88,12 @@ def test_explorer_gets_the_database_map(db):
 def test_critic_condition_scores_the_answer_before_and_after_the_critic(db):
     client = FakeClient([
         reply("<sql>SELECT name, note FROM items WHERE id = 1</sql>"),
-        reply("<verdict>REVISE</verdict><feedback>Check 2: drop note.</feedback>"),
+        reply("<verdict>REVISE</verdict><requirement>name only</requirement>"
+              "<problem>note is not asked for</problem><fix>drop note</fix>"),
         reply("<sql>SELECT name FROM items WHERE id = 1</sql>"),
         reply("<verdict>OK</verdict>"),
     ])
-    row = evaluate(client, question("SELECT name FROM items WHERE id = 1"), "explorer_critic", db)
+    q = question("SELECT name FROM items WHERE id = 1") | {"question": "Which fruit has id 1? Its name only."}
+    row = evaluate(client, q, "explorer_critic", db)
     assert row["correct"] is True and row["correct_before_critic"] is False
     assert [c["verdict"] for c in row["critic"]] == ["REVISE", "OK"] and row["reverted"] is False

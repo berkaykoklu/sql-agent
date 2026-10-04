@@ -36,10 +36,13 @@ def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0) -> dict:
         }
         reviewed = [r for r in picked if "correct_before_critic" in r]
         if reviewed:
+            acted = [any(v["verdict"] in ("REVISE", "ERROR") for v in r["critic"]) for r in reviewed]
             out[c]["critic"] = {
-                "flagged": sum(any(v["verdict"] == "REVISE" for v in r["critic"]) for r in reviewed),
+                "verdicts": dict(Counter(r["critic"][0]["verdict"] for r in reviewed)),
+                "acted": sum(acted),
                 "fixed": sum(r["correct"] and not r["correct_before_critic"] for r in reviewed),
                 "broke": sum(r["correct_before_critic"] and not r["correct"] for r in reviewed),
+                "missed": sum(not r["correct_before_critic"] and not a for r, a in zip(reviewed, acted)),
                 "reverted": sum(r["reverted"] for r in reviewed),
                 "acc_before": sum(r["correct_before_critic"] for r in reviewed) / len(reviewed),
             }
@@ -101,7 +104,8 @@ def main() -> None:
         if "critic" in s[c]:
             k = s[c]["critic"]
             print(f"{c} critic: accuracy before {k['acc_before']:.1%} → after {s[c]['acc']['overall']:.1%}; "
-                  f"flagged {k['flagged']}, fixed {k['fixed']}, broke {k['broke']}, reverted {k['reverted']}")
+                  f"first verdicts {k['verdicts']}; acted {k['acted']}, fixed {k['fixed']}, broke {k['broke']}, "
+                  f"missed {k['missed']}, reverted {k['reverted']}")
     for c in s["conditions"]:
         if "delta" in s[c]:
             low, high = s[c]["ci"]

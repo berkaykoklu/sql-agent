@@ -50,8 +50,10 @@ def test_tool_usage_is_averaged_and_delta_needs_a_baseline():
 def test_critic_effect_is_summarised_on_the_same_answers():
     base = {"condition": "explorer_critic", "difficulty": "simple", "status": "ok", "cost": 0.001,
             "exhausted": False, "steps": [], "reverted": False}
-    rs = [base | {"question_id": 1, "correct": True, "correct_before_critic": False, "critic": [{"verdict": "REVISE"}]},
-          base | {"question_id": 2, "correct": False, "correct_before_critic": True, "critic": [{"verdict": "REVISE"}], "reverted": True},
-          base | {"question_id": 3, "correct": True, "correct_before_critic": True, "critic": [{"verdict": "OK"}]}]
+    rs = [base | {"question_id": 1, "correct": True, "correct_before_critic": False, "critic": [{"verdict": "REVISE"}, {"verdict": "OK"}]},
+          base | {"question_id": 2, "correct": False, "correct_before_critic": True, "critic": [{"verdict": "ERROR"}], "reverted": True},
+          base | {"question_id": 3, "correct": True, "correct_before_critic": True, "critic": [{"verdict": "OK"}]},
+          base | {"question_id": 4, "correct": False, "correct_before_critic": False, "critic": [{"verdict": "UNSURE"}]}]
     c = summarize(rs)["explorer_critic"]["critic"]
-    assert c == {"flagged": 2, "fixed": 1, "broke": 1, "reverted": 1, "acc_before": 2 / 3}
+    assert c == {"verdicts": {"REVISE": 1, "ERROR": 1, "OK": 1, "UNSURE": 1}, "acted": 2, "fixed": 1,
+                 "broke": 1, "missed": 1, "reverted": 1, "acc_before": 2 / 4}

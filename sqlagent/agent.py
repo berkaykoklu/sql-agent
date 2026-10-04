@@ -192,16 +192,22 @@ def agent(client, question: str, evidence: str, overview: str, db_path: Path,
     if critic_rounds:
         result.sql_before_critic = result.sql
     for _ in range(critic_rounds):
-        columns = "\n\n".join(dict.fromkeys(s["output"] for s in result.steps if s["tool"] == "describe_table"))
-        verdict, feedback, resp = critic.review(
-            client, question, evidence, overview, columns, result.sql, run(db_path, result.sql))
-        result.add_usage(resp)
-        result.critic.append({"verdict": verdict, "feedback": feedback})
-        if verdict != "REVISE":
-            break
+        output = run(db_path, result.sql)
+        if output.startswith("ERROR"):  # a failing query needs no model to notice
+            verdict, turn = "ERROR", critic.ERROR_TURN.format(error=output.removeprefix("ERROR: "))
+            result.critic.append({"verdict": verdict, "feedback": output})
+        else:
+            columns = "\n\n".join(dict.fromkeys(s["output"] for s in result.steps if s["tool"] == "describe_table"))
+            verdict, feedback, resp = critic.review(
+                client, question, evidence, overview, columns, result.sql, output)
+            result.add_usage(resp)
+            result.critic.append({"verdict": verdict, "feedback": feedback})
+            if verdict != "REVISE":
+                break
+            turn = critic.REVISE_TURN.format(feedback=feedback)
         previous = result.sql
         messages.append({"role": "assistant", "content": f"<sql>{previous}</sql>"})
-        messages.append({"role": "user", "content": critic.REVISE_TURN.format(feedback=feedback)})
+        messages.append({"role": "user", "content": turn})
         _explore(client, messages, db_path, result, len(result.steps) + 5)
         if _returns_rows(db_path, previous) and not _returns_rows(db_path, result.sql):
             result.sql, result.reverted = previous, True
