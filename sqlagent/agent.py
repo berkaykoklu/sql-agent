@@ -21,11 +21,23 @@ You may call several tools in one turn.
 </tools_usage>
 
 <rules>
-- Return exactly the columns the question asks for, in the order asked. No extra columns
-  (no IDs, counts or helper columns unless the question asks for them).
+- Return exactly the columns the question asks for, in the order the question mentions them.
+  No extra columns (no IDs, counts or helper columns unless the question asks for them).
+- The <hint> is authoritative. When it defines a column, a value or a formula, use exactly that
+  definition, even if you would read the question differently. Keep a formula's numerator and
+  denominator as written.
 - The <hint> may use pseudo-functions such as DIVIDE, SUBTRACT or MAX(COUNT(...)).
   Translate them to SQLite: a / b, a - b, ORDER BY COUNT(*) DESC LIMIT 1.
-- For ratios and percentages use CAST(... AS REAL) to avoid integer division.
+- For ratios and percentages use CAST(... AS REAL) to avoid integer division; a percentage is multiplied by 100.
+- Return numbers as numbers. For "N decimal places" use ROUND(value, N); never printf, string formatting or a % sign.
+- Return names as stored: first name and last name in separate columns, never concatenated.
+- Answer yes/no questions with 'YES' or 'NO'.
+- When the question asks to rank, include the rank as a column computed with RANK() OVER (...).
+- Use LIMIT only when the question asks for a specific number of rows or for the single highest or lowest one.
+  When ordering to find a highest or lowest value, exclude NULL and empty values.
+- Do not add filters that neither the question nor the hint asks for.
+- When similar columns exist in several tables (for example per-race results and season standings),
+  check the candidates with describe_table and pick the one that matches the question's meaning.
 - Copy literal values exactly as they are written in the data (spelling and case).
 - Use only tables and columns that exist.
 </rules>
