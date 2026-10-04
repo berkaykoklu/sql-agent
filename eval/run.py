@@ -11,7 +11,8 @@ from pathlib import Path
 from openai import OpenAI
 
 from sqlagent.agent import agent
-from sqlagent.db import QUESTIONS, QueryError, db_file, execute, overview, same_result
+from sqlagent.catalog import from_bird_csv
+from sqlagent.db import QUESTIONS, Database, QueryError, bird_sqlite, db_file, same_result
 
 # critic off by default: on 300 held-out questions it fixed 2 answers and broke 5
 CONDITIONS = ("explorer",)
@@ -19,8 +20,13 @@ CRITIC_ROUNDS = {"explorer": 0, "explorer_critic": 2}
 
 
 @lru_cache(maxsize=None)
-def cached_overview(db_path: Path) -> str:
-    return overview(db_path)
+def database_for(db_id: str, url: str | None = None) -> Database:
+    """One Database per BIRD db_id; with a URL (e.g. PostgreSQL) it is scoped to that db_id's tables."""
+    sqlite = bird_sqlite(db_id)
+    if url is None:
+        return sqlite
+    return Database(url, catalog=from_bird_csv(db_file(db_id).parent / "database_description"),
+                    tables=sqlite.table_names)
 
 
 def sample_by_difficulty(questions: list[dict], n: int, seed: int = 0) -> list[dict]:
@@ -45,33 +51,32 @@ def load_done(path: Path) -> set[tuple[int, str]]:
     return done
 
 
-def evaluate(client, q: dict, condition: str, db_path: Path) -> dict:
+def evaluate(client, q: dict, condition: str, db: Database) -> dict:
     row = {k: q[k] for k in ("question_id", "db_id", "difficulty")} | {"condition": condition}
     try:
-        gold = execute(db_path, q["SQL"])
+        gold = db.execute(q["SQL"])
     except QueryError as e:
         return row | {"status": "gold_failed", "error": str(e)}
     try:
         start = time.monotonic()
-        r = agent(client, q["question"], q["evidence"], cached_overview(db_path), db_path,
-                  critic_rounds=CRITIC_ROUNDS[condition])
+        r = agent(client, q["question"], q["evidence"], db, critic_rounds=CRITIC_ROUNDS[condition])
         seconds = time.monotonic() - start
     except Exception as e:  # API failure after SDK retries; the next run retries this row
         return row | {"status": "error", "error": repr(e)}
     row |= {
-        "status": "ok", "correct": _matches(db_path, r.sql, gold), "sql": r.sql, "steps": r.steps,
+        "status": "ok", "correct": _matches(db, r.sql, gold), "sql": r.sql, "steps": r.steps,
         "input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
         "cost": r.cost, "exhausted": r.exhausted, "seconds": round(seconds, 2),
     }
     if r.sql_before_critic is not None:
         row |= {"sql_before_critic": r.sql_before_critic, "critic": r.critic, "reverted": r.reverted,
-                "correct_before_critic": _matches(db_path, r.sql_before_critic, gold)}
+                "correct_before_critic": _matches(db, r.sql_before_critic, gold)}
     return row
 
 
-def _matches(db_path: Path, sql: str, gold: list[tuple]) -> bool:
+def _matches(db: Database, sql: str, gold: list[tuple]) -> bool:
     try:
-        return bool(sql.strip()) and same_result(execute(db_path, sql), gold)
+        return bool(sql.strip()) and same_result(db.execute(sql), gold)
     except QueryError:
         return False
 
@@ -84,6 +89,7 @@ def main() -> None:
     p.add_argument("--out", default="results.jsonl")
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--critic", action="store_true", help="also run the critic (condition explorer_critic)")
+    p.add_argument("--db-url", help="run on this database (e.g. PostgreSQL) instead of the BIRD SQLite files")
     a = p.parse_args()
 
     # mini-dev ships items 137 and 138 twice, byte-identical; 498 unique questions
@@ -102,7 +108,7 @@ def main() -> None:
 
     def work(job: tuple[dict, str]) -> tuple[str, float]:
         q, condition = job
-        row = evaluate(client, q, condition, db_file(q["db_id"]))
+        row = evaluate(client, q, condition, database_for(q["db_id"], a.db_url))
         with lock, out.open("a") as f:
             f.write(json.dumps(row) + "\n")
         return row["status"], row.get("cost", 0.0)

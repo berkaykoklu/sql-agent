@@ -25,32 +25,32 @@ def question(gold):
             "question": "q", "evidence": "", "SQL": gold}
 
 
-def test_correct_answer_is_scored_ok(db):
+def test_correct_answer_is_scored_ok(database):
     row = evaluate(FakeClient([reply("SELECT name FROM items WHERE id = 1")]),
-                   question("SELECT name FROM items WHERE id = 1"), "explorer", db)
+                   question("SELECT name FROM items WHERE id = 1"), "explorer", database)
     assert row["status"] == "ok" and row["correct"] is True and row["cost"] > 0
 
 
-def test_broken_prediction_is_wrong_not_fatal(db):
+def test_broken_prediction_is_wrong_not_fatal(database):
     row = evaluate(FakeClient([reply("SELECT nope FROM items")]),
-                   question("SELECT name FROM items"), "explorer", db)
+                   question("SELECT name FROM items"), "explorer", database)
     assert row["status"] == "ok" and row["correct"] is False
 
 
-def test_empty_sql_never_matches_empty_gold(db):
-    row = evaluate(FakeClient([reply("")]), question("SELECT id FROM items WHERE id > 99"), "explorer", db)
+def test_empty_sql_never_matches_empty_gold(database):
+    row = evaluate(FakeClient([reply("")]), question("SELECT id FROM items WHERE id > 99"), "explorer", database)
     assert row["correct"] is False
 
 
-def test_failing_gold_is_excluded(db):
-    row = evaluate(FakeClient([]), question("SELECT nope FROM items"), "explorer", db)
+def test_failing_gold_is_excluded(database):
+    row = evaluate(FakeClient([]), question("SELECT nope FROM items"), "explorer", database)
     assert row["status"] == "gold_failed"
 
 
-def test_api_failure_is_recorded_as_error(db):
+def test_api_failure_is_recorded_as_error(database):
     class Down:
         chat = NS(completions=NS(create=lambda **kw: (_ for _ in ()).throw(RuntimeError("503"))))
-    row = evaluate(Down(), question("SELECT 1"), "explorer", db)
+    row = evaluate(Down(), question("SELECT 1"), "explorer", database)
     assert row["status"] == "error" and "503" in row["error"]
 
 
@@ -77,15 +77,15 @@ def test_sample_by_difficulty_is_stratified_and_deterministic():
     assert len(sample_by_difficulty(qs, 60)) == 60
 
 
-def test_explorer_gets_the_database_map(db):
+def test_explorer_gets_the_database_map(database):
     client = FakeClient([reply("<sql>SELECT 1</sql>")])
-    row = evaluate(client, question("SELECT 1"), "explorer", db)
+    row = evaluate(client, question("SELECT 1"), "explorer", database)
     assert row["status"] == "ok" and row["correct"] is True
-    assert '<database name="shop">' in client.calls[0]["messages"][1]["content"]
+    assert '<database name="shop"' in client.calls[0]["messages"][1]["content"]
     assert len(client.calls[0]["tools"]) == 3
 
 
-def test_critic_condition_scores_the_answer_before_and_after_the_critic(db):
+def test_critic_condition_scores_the_answer_before_and_after_the_critic(database):
     client = FakeClient([
         reply("<sql>SELECT name, note FROM items WHERE id = 1</sql>"),
         reply("<verdict>REVISE</verdict><requirement>name only</requirement>"
@@ -94,11 +94,11 @@ def test_critic_condition_scores_the_answer_before_and_after_the_critic(db):
         reply("<verdict>OK</verdict>"),
     ])
     q = question("SELECT name FROM items WHERE id = 1") | {"question": "Which fruit has id 1? Its name only."}
-    row = evaluate(client, q, "explorer_critic", db)
+    row = evaluate(client, q, "explorer_critic", database)
     assert row["correct"] is True and row["correct_before_critic"] is False
     assert [c["verdict"] for c in row["critic"]] == ["REVISE", "OK"] and row["reverted"] is False
 
 
-def test_rows_record_how_long_the_agent_took(db):
-    row = evaluate(FakeClient([reply("<sql>SELECT 1</sql>")]), question("SELECT 1"), "explorer", db)
+def test_rows_record_how_long_the_agent_took(database):
+    row = evaluate(FakeClient([reply("<sql>SELECT 1</sql>")]), question("SELECT 1"), "explorer", database)
     assert isinstance(row["seconds"], float) and 0 <= row["seconds"] < 5

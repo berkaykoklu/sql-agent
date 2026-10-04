@@ -47,7 +47,7 @@ def test_parse_review_rejects_ungrounded_or_malformed_reviews():
     assert parse_review("looks fine to me", QUESTION, "")[0] == "INVALID"
 
 
-def test_grounded_feedback_goes_back_to_the_agent_and_is_rechecked(db):
+def test_grounded_feedback_goes_back_to_the_agent_and_is_rechecked(database):
     client = FakeClient([
         reply(tool_calls=[call("describe_table", {"table": "items"})]),
         reply("<sql>SELECT name, note FROM items WHERE id = 1</sql>"),
@@ -55,47 +55,47 @@ def test_grounded_feedback_goes_back_to_the_agent_and_is_rechecked(db):
         reply("<sql>SELECT name FROM items WHERE id = 1</sql>"),
         reply("<verdict>OK</verdict>"),
     ])
-    r = agent(client, QUESTION, "hint", "MAP", db, critic_rounds=2)
+    r = agent(client, QUESTION, "hint", database, critic_rounds=2)
     assert r.sql_before_critic == "SELECT name, note FROM items WHERE id = 1"
     assert r.sql == "SELECT name FROM items WHERE id = 1"
     assert [c["verdict"] for c in r.critic] == ["REVISE", "OK"] and not r.reverted
     critic_prompt = client.calls[2]["messages"][1]["content"]
-    assert "table items:" in critic_prompt and "('apple', 'red')" in critic_prompt and "MAP" in critic_prompt
+    assert "table items:" in critic_prompt and "('apple', 'red')" in critic_prompt and '<database name="shop"' in critic_prompt
     assert "tools" not in client.calls[2]
     to_agent = client.calls[3]["messages"][-1]["content"]
     assert "Drop the note column." in to_agent and "run_sql" in to_agent
     assert r.input_tokens == 500
 
 
-def test_failing_sql_goes_back_to_the_agent_without_asking_the_critic(db):
+def test_failing_sql_goes_back_to_the_agent_without_asking_the_critic(database):
     client = FakeClient([
         reply("<sql>SELECT nope FROM items</sql>"),
         reply("<sql>SELECT name FROM items WHERE id = 1</sql>"),
         reply("<verdict>OK</verdict>"),
     ])
-    r = agent(client, QUESTION, "", "MAP", db, critic_rounds=2)
+    r = agent(client, QUESTION, "", database, critic_rounds=2)
     assert [c["verdict"] for c in r.critic] == ["ERROR", "OK"]
     assert "no such column" in client.calls[1]["messages"][-1]["content"]
     assert r.sql == "SELECT name FROM items WHERE id = 1"
 
 
-def test_invalid_or_unsure_reviews_change_nothing(db):
+def test_invalid_or_unsure_reviews_change_nothing(database):
     for review in (revise("Return the colour too"), "<verdict>UNSURE</verdict>"):
         client = FakeClient([reply("<sql>SELECT name FROM items WHERE id = 1</sql>"), reply(review)])
-        r = agent(client, QUESTION, "", "MAP", db, critic_rounds=2)
+        r = agent(client, QUESTION, "", database, critic_rounds=2)
         assert r.sql == r.sql_before_critic and len(client.calls) == 2 and r.critic[0]["verdict"] in ("INVALID", "UNSURE")
 
 
-def test_revision_that_loses_all_rows_is_reverted(db):
+def test_revision_that_loses_all_rows_is_reverted(database):
     client = FakeClient([
         reply("<sql>SELECT name FROM items WHERE id = 1</sql>"),
         reply(revise()),
         reply("<sql>SELECT name FROM items WHERE id = 99</sql>"),
     ])
-    r = agent(client, QUESTION, "", "MAP", db, critic_rounds=2)
+    r = agent(client, QUESTION, "", database, critic_rounds=2)
     assert r.reverted and r.sql == "SELECT name FROM items WHERE id = 1" and len(client.calls) == 3
 
 
-def test_without_critic_rounds_nothing_is_recorded(db):
-    r = agent(FakeClient([reply("<sql>SELECT 1</sql>")]), "q", "", "MAP", db)
+def test_without_critic_rounds_nothing_is_recorded(database):
+    r = agent(FakeClient([reply("<sql>SELECT 1</sql>")]), "q", "", database)
     assert r.sql_before_critic is None and r.critic == []

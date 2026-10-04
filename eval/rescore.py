@@ -2,20 +2,20 @@ import argparse
 import json
 from pathlib import Path
 
-from sqlagent.db import QueryError, db_file, execute, same_result
+from sqlagent.db import QueryError, bird_sqlite, same_result
 
 FIXES = Path(__file__).parent / "gold_fixes.json"
 
 
-def rescore(rows: list[dict], fixes: dict[int, str], db_path_for) -> list[dict]:
+def rescore(rows: list[dict], fixes: dict[int, str], db_for) -> list[dict]:
     out = []
     for r in rows:
         r = dict(r)
         if r["status"] == "ok" and r["question_id"] in fixes:
-            path = db_path_for(r["db_id"])
+            db = db_for(r["db_id"])
             try:
-                gold = execute(path, fixes[r["question_id"]])
-                r["correct"] = bool(r["sql"].strip()) and same_result(execute(path, r["sql"]), gold)
+                gold = db.execute(fixes[r["question_id"]])
+                r["correct"] = bool(r["sql"].strip()) and same_result(db.execute(r["sql"]), gold)
             except QueryError:
                 r["correct"] = False
             r["gold_fixed"] = True
@@ -31,7 +31,7 @@ def main() -> None:
     for path in map(Path, a.paths):
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         out = path.with_suffix(".fixed.jsonl")
-        out.write_text("".join(json.dumps(r) + "\n" for r in rescore(rows, fixes, db_file)))
+        out.write_text("".join(json.dumps(r) + "\n" for r in rescore(rows, fixes, bird_sqlite)))
         print(f"{path} -> {out}")
 
 

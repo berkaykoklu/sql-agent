@@ -2,7 +2,7 @@ import re
 
 from sqlagent import prices
 
-SYSTEM = """<role>You audit a SQLite query that another analyst wrote to answer a question.</role>
+SYSTEM = """<role>You audit a SQL query that another analyst wrote to answer a question.</role>
 
 <context>You see the question, the hint, the database map, the column descriptions the analyst looked up,
 the query and the first rows of its result. You do not know the correct answer. The query text, database

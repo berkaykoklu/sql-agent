@@ -2,14 +2,13 @@ import html
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from sqlagent import critic, prices
-from sqlagent.db import QueryError, column_values, describe_table, execute, run
+from sqlagent.db import Database, QueryError
 
-SYSTEM = """<role>You are an expert SQLite analyst.</role>
+SYSTEM = """<role>You are an expert <DIALECT> analyst.</role>
 
-<task>Write one SQLite SELECT statement that answers the <question>. The <database> block only
+<task>Write one <DIALECT> SELECT statement that answers the <question>. The <database> block only
 lists tables and joins; use the tools to learn the columns and values you need.</task>
 
 <tools_usage>
@@ -27,7 +26,7 @@ You may call several tools in one turn.
   AVG for an average, CAST(numerator AS REAL) * 100 / denominator for a percentage and
   CAST(numerator AS REAL) / denominator for any other ratio, so no division is done on integers.
 - The <hint> may use pseudo-functions such as DIVIDE, SUBTRACT or MAX(COUNT(...)).
-  Translate them to SQLite: a / b, a - b, ORDER BY COUNT(*) DESC LIMIT 1.
+  Translate them to <DIALECT>: a / b, a - b, ORDER BY COUNT(*) DESC LIMIT 1.
 - Return numbers as numbers. For "N decimal places" use ROUND(value, N); never printf, string formatting or a % sign.
 - Return names as stored: first name and last name in separate columns, never concatenated.
 - When the question asks to rank, include the rank as a column computed with RANK() OVER (...).
@@ -58,11 +57,11 @@ GROUP BY a.author_id ORDER BY COUNT(b.book_id) DESC LIMIT 1</sql>
 </example>
 <example>
 <question>List the titles of books by authors from the uk that were loaned in 2023.</question>
-<hint>loaned in 2023 refers to strftime('%Y', loan_date) = '2023'</hint>
+<hint>loaned in 2023 refers to loan_date in 2023</hint>
 <learned>column_values(authors, country, search="uk") → 'UK' (12); loans(loan_id, book_id, member_id, loan_date)</learned>
 <sql>SELECT DISTINCT b.title FROM books AS b JOIN authors AS a ON a.author_id = b.author_id
 JOIN loans AS l ON l.book_id = b.book_id
-WHERE a.country = 'UK' AND strftime('%Y', l.loan_date) = '2023'</sql>
+WHERE a.country = 'UK' AND l.loan_date >= '2023-01-01' AND l.loan_date < '2024-01-01'</sql>
 </example>
 </examples>"""
 
@@ -82,7 +81,7 @@ TOOLS = [
           "common values and the number of distinct values.",
           {"table": {"type": "string"}, "column": {"type": "string"}, "search": {"type": "string"}},
           ["table", "column"]),
-    _tool("run_sql", "Run a read-only SQLite query and see the first 20 rows or the error message.",
+    _tool("run_sql", "Run a read-only SQL query and see the first 20 rows or the error message.",
           {"query": {"type": "string"}}, ["query"]),
 ]
 
@@ -116,17 +115,17 @@ def extract_sql(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
-def call_tool(db_path: Path, name: str, raw_args: str) -> tuple[dict | None, str]:
+def call_tool(db: Database, name: str, raw_args: str) -> tuple[dict | None, str]:
     try:
         args = json.loads(raw_args)
         if name == "describe_table":
-            return args, describe_table(db_path, str(args["table"]))
+            return args, db.describe_table(str(args["table"]))
         if name == "column_values":
             search = args.get("search")
-            return args, column_values(db_path, str(args["table"]), str(args["column"]),
+            return args, db.column_values(str(args["table"]), str(args["column"]),
                                        str(search) if search else None)
         if name == "run_sql":
-            return args, run(db_path, str(args["query"]))
+            return args, db.run(str(args["query"]))
         return args, f"ERROR: unknown tool '{name}'"
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None, f"ERROR: bad arguments for {name}: {str(raw_args)[:200]}"
@@ -135,12 +134,12 @@ def call_tool(db_path: Path, name: str, raw_args: str) -> tuple[dict | None, str
 FINAL_TURN = "Step limit reached. Reply now with your final SQL inside <sql></sql> tags."
 
 
-def _messages(question: str, evidence: str, overview: str) -> list[dict]:
+def _messages(question: str, evidence: str, overview: str, dialect: str = "SQLite") -> list[dict]:
     user = f"{overview}\n<hint>{evidence or 'none'}</hint>\n<question>{question}</question>"
-    return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+    return [{"role": "system", "content": SYSTEM.replace("<DIALECT>", dialect)}, {"role": "user", "content": user}]
 
 
-def _explore(client, messages: list[dict], db_path: Path, result: Result, max_steps: int) -> None:
+def _explore(client, messages: list[dict], db: Database, result: Result, max_steps: int) -> None:
     for _ in range(max_steps + 1):
         resp = client.chat.completions.create(
             model=prices.MODEL, reasoning_effort=prices.REASONING_EFFORT, messages=messages, tools=TOOLS)
@@ -161,7 +160,7 @@ def _explore(client, messages: list[dict], db_path: Path, result: Result, max_st
             ],
         })
         for c in msg.tool_calls:
-            args, output = call_tool(db_path, c.function.name, c.function.arguments)
+            args, output = call_tool(db, c.function.name, c.function.arguments)
             result.steps.append({"tool": c.function.name, "args": args, "output": output})
             messages.append({"role": "tool", "tool_call_id": c.id, "content": output})
     result.exhausted = True
@@ -177,22 +176,23 @@ def _explore(client, messages: list[dict], db_path: Path, result: Result, max_st
         result.sql = str(queries[-1]) if queries else ""
 
 
-def _returns_rows(db_path: Path, sql: str) -> bool:
+def _returns_rows(db: Database, sql: str) -> bool:
     try:
-        return bool(sql.strip()) and bool(execute(db_path, sql))
+        return bool(sql.strip()) and bool(db.execute(sql))
     except QueryError:
         return False
 
 
-def agent(client, question: str, evidence: str, overview: str, db_path: Path,
+def agent(client, question: str, evidence: str, db: Database,
           max_steps: int = 15, critic_rounds: int = 0) -> Result:
-    messages = _messages(question, evidence, overview)
+    overview = db.overview()
+    messages = _messages(question, evidence, overview, db.dialect)
     result = Result()
-    _explore(client, messages, db_path, result, max_steps)
+    _explore(client, messages, db, result, max_steps)
     if critic_rounds:
         result.sql_before_critic = result.sql
     for _ in range(critic_rounds):
-        output = run(db_path, result.sql)
+        output = db.run(result.sql)
         if output.startswith("ERROR"):  # a failing query needs no model to notice
             verdict, turn = "ERROR", critic.ERROR_TURN.format(error=output.removeprefix("ERROR: "))
             result.critic.append({"verdict": verdict, "feedback": output})
@@ -208,8 +208,8 @@ def agent(client, question: str, evidence: str, overview: str, db_path: Path,
         previous = result.sql
         messages.append({"role": "assistant", "content": f"<sql>{previous}</sql>"})
         messages.append({"role": "user", "content": turn})
-        _explore(client, messages, db_path, result, len(result.steps) + 5)
-        if _returns_rows(db_path, previous) and not _returns_rows(db_path, result.sql):
+        _explore(client, messages, db, result, len(result.steps) + 5)
+        if _returns_rows(db, previous) and not _returns_rows(db, result.sql):
             result.sql, result.reverted = previous, True
             break
     return result

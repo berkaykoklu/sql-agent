@@ -31,7 +31,7 @@ def test_extract_sql_prefers_sql_tags():
     assert extract_sql("  SELECT 3  ") == "SELECT 3"
 
 
-def test_explorer_routes_each_tool_and_returns_final(db):
+def test_explorer_routes_each_tool_and_returns_final(database):
     final = "SELECT name FROM regions WHERE name = 'east Bohemia'"
     client = FakeClient([
         reply(tool_calls=[call("describe_table", {"table": "regions"}, "a"),
@@ -39,21 +39,21 @@ def test_explorer_routes_each_tool_and_returns_final(db):
         reply(tool_calls=[call("run_sql", {"query": final}, "c")]),
         reply(f"<sql>{final}</sql>"),
     ])
-    r = agent(client, "q", "", "MAP", db)
+    r = agent(client, "q", "", database)
     assert [s["tool"] for s in r.steps] == ["describe_table", "column_values", "run_sql"]
     assert "'east Bohemia' (2)" in r.steps[1]["output"]
     assert r.sql == final and not r.exhausted
     assert [m["tool_call_id"] for m in client.calls[1]["messages"] if m["role"] == "tool"] == ["a", "b"]
     assert {t["function"]["name"] for t in client.calls[0]["tools"]} == {"describe_table", "column_values", "run_sql"}
-    assert "MAP" in client.calls[0]["messages"][1]["content"]
+    assert '<database name="shop"' in client.calls[0]["messages"][1]["content"]
 
 
-def test_unknown_tool_and_bad_arguments_come_back_as_errors(db):
+def test_unknown_tool_and_bad_arguments_come_back_as_errors(database):
     client = FakeClient([
         reply(tool_calls=[call("drop_table", {"table": "items"}, "a"), call("run_sql", None, "b", raw="not json")]),
         reply("<sql>SELECT 1</sql>"),
     ])
-    r = agent(client, "q", "", "MAP", db)
+    r = agent(client, "q", "", database)
     outputs = [m["content"] for m in client.calls[1]["messages"] if m["role"] == "tool"]
     assert outputs[0].startswith("ERROR: unknown tool 'drop_table'")
     assert outputs[1].startswith("ERROR: bad arguments")
@@ -68,18 +68,18 @@ def _cap_replies(final):
     return replies
 
 
-def test_step_cap_asks_for_a_final_answer_without_tools(db):
+def test_step_cap_asks_for_a_final_answer_without_tools(database):
     client = FakeClient(_cap_replies("<sql>SELECT 42</sql>"))
-    r = agent(client, "q", "", "MAP", db)
+    r = agent(client, "q", "", database)
     assert r.exhausted and len(r.steps) == 15 and len(client.calls) == 17
     assert client.calls[-1]["tool_choice"] == "none"
     assert client.calls[-1]["messages"][-1]["role"] == "user"
     assert r.sql == "SELECT 42"
 
 
-def test_step_cap_falls_back_to_last_run_sql_when_final_turn_is_empty(db):
+def test_step_cap_falls_back_to_last_run_sql_when_final_turn_is_empty(database):
     client = FakeClient(_cap_replies(""))
-    r = agent(client, "q", "", "MAP", db)
+    r = agent(client, "q", "", database)
     assert r.exhausted and r.sql == "SELECT 13"
 
 
@@ -87,9 +87,9 @@ def test_extract_sql_unescapes_backslash_quotes_inside_sql_tags():
     assert extract_sql('<sql>SELECT f.\\"District Code\\" FROM frpm AS f</sql>') == 'SELECT f."District Code" FROM frpm AS f'
 
 
-def test_usage_and_cost_accumulate(db):
+def test_usage_and_cost_accumulate(database):
     client = FakeClient([reply(tool_calls=[call("run_sql", {"query": "SELECT 1"})]), reply("<sql>SELECT 1</sql>")])
-    r = agent(client, "q", "", "MAP", db)
+    r = agent(client, "q", "", database)
     assert (r.input_tokens, r.output_tokens) == (200, 20) and r.cost == prices.cost(200, 20)
     assert client.calls[0]["model"] == prices.MODEL
 
@@ -97,3 +97,10 @@ def test_usage_and_cost_accumulate(db):
 def test_extract_sql_unescapes_xml_entities_inside_sql_tags():
     assert extract_sql("<sql>SELECT a FROM t WHERE b &gt; 1 AND c &lt;&gt; 'x &amp; y'</sql>") == \
         "SELECT a FROM t WHERE b > 1 AND c <> 'x & y'"
+
+
+def test_system_prompt_names_the_dialect_and_has_no_sqlite_only_functions(database):
+    client = FakeClient([reply("<sql>SELECT 1</sql>")])
+    agent(client, "q", "", database)
+    system = client.calls[0]["messages"][0]["content"]
+    assert "expert SQLite analyst" in system and "strftime" not in system
