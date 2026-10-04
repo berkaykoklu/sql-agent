@@ -75,7 +75,8 @@ def main() -> None:
     p.add_argument("--workers", type=int, default=8)
     a = p.parse_args()
 
-    questions = json.loads(QUESTIONS.read_text())
+    # mini-dev ships items 137 and 138 twice, byte-identical; 498 unique questions
+    questions = list({q["question_id"]: q for q in json.loads(QUESTIONS.read_text())}.values())
     if a.pilot:
         questions = pilot_sample(questions)
     elif a.limit:
