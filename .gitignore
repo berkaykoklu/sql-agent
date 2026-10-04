@@ -1,0 +1,7 @@
+docs/superpowers/
+.venv/
+__pycache__/
+.env
+data/
+results*.jsonl
+.superpowers/
