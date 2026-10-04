@@ -1,3 +1,4 @@
+import html
 import json
 import re
 from dataclasses import dataclass, field
@@ -94,11 +95,11 @@ class Result:
 
 
 def extract_sql(text: str) -> str:
-    for pattern in (r"<sql>(.*?)</sql>", r"```(?:sql)?\s*(.*?)```"):
-        match = re.search(pattern, text, re.S | re.I)
-        if match:
-            return match.group(1).strip()
-    return text.strip()
+    match = re.search(r"<sql>(.*?)</sql>", text, re.S | re.I)
+    if match:
+        return html.unescape(match.group(1)).strip()  # inside XML tags the model writes > as &gt;
+    match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.S | re.I)
+    return (match.group(1) if match else text).strip()
 
 
 def call_tool(db_path: Path, name: str, raw_args: str) -> tuple[dict | None, str]:

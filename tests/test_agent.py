@@ -75,3 +75,8 @@ def test_usage_and_cost_accumulate(db):
     r = agent(client, "q", "", "MAP", db)
     assert (r.input_tokens, r.output_tokens) == (200, 20) and r.cost == prices.cost(200, 20)
     assert client.calls[0]["model"] == prices.MODEL
+
+
+def test_extract_sql_unescapes_xml_entities_inside_sql_tags():
+    assert extract_sql("<sql>SELECT a FROM t WHERE b &gt; 1 AND c &lt;&gt; 'x &amp; y'</sql>") == \
+        "SELECT a FROM t WHERE b > 1 AND c <> 'x & y'"
