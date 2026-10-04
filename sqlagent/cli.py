@@ -11,11 +11,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Ask a BIRD mini-dev database a question.")
     p.add_argument("--db", required=True, help="db_id, e.g. california_schools")
     p.add_argument("--evidence", default="", help="optional hint, like BIRD's evidence field")
+    p.add_argument("--critic", action="store_true", help="let a second model review the answer (off: it hurt on held-out)")
     p.add_argument("question")
     a = p.parse_args()
 
     path = db_file(a.db)
-    r = agent(OpenAI(max_retries=5), a.question, a.evidence, overview(path), path, critic_rounds=2)
+    r = agent(OpenAI(max_retries=5), a.question, a.evidence, overview(path), path, critic_rounds=2 if a.critic else 0)
     for i, step in enumerate(r.steps, 1):
         print(f"--- step {i}: {step['tool']}({json.dumps(step['args'])})\n{step['output']}\n")
     for review in r.critic:

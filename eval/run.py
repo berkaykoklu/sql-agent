@@ -13,7 +13,8 @@ from openai import OpenAI
 from sqlagent.agent import agent
 from sqlagent.db import QUESTIONS, QueryError, db_file, execute, overview, same_result
 
-CONDITIONS = ("explorer_critic",)
+# critic off by default: on 300 held-out questions it fixed 2 answers and broke 5
+CONDITIONS = ("explorer",)
 CRITIC_ROUNDS = {"explorer": 0, "explorer_critic": 2}
 
 
@@ -82,6 +83,7 @@ def main() -> None:
     p.add_argument("--limit", type=int, help="first N questions only")
     p.add_argument("--out", default="results.jsonl")
     p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--critic", action="store_true", help="also run the critic (condition explorer_critic)")
     a = p.parse_args()
 
     # mini-dev ships items 137 and 138 twice, byte-identical; 498 unique questions
@@ -93,7 +95,8 @@ def main() -> None:
 
     out = Path(a.out)
     done = load_done(out)
-    jobs = [(q, c) for q in questions for c in CONDITIONS if (q["question_id"], c) not in done]
+    conditions = ("explorer_critic",) if a.critic else CONDITIONS
+    jobs = [(q, c) for q in questions for c in conditions if (q["question_id"], c) not in done]
     client = OpenAI(max_retries=5)
     lock = threading.Lock()
 
