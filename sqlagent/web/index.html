@@ -125,8 +125,9 @@ td{color:#d6d9f2}
   <div class="field"><label for="catalog">Catalog (optional JSON)</label><input type="file" id="catalog" accept="application/json" style="color:#8a8fb0;font-size:12px"></div>
   <button class="pillbtn" id="connectBtn">Connect <i>↗</i></button>
   <div class="note" id="connectNote">Read-only: only single SELECT queries reach the database.</div>
-  <div class="field" style="margin-top:22px"><label>Tables the agent may see</label><div class="checks" id="checks"><div class="empty">connect first</div></div></div>
+  <div class="field" style="margin-top:22px"><label>Tables the agent can see</label><div class="checks" id="checks"><div class="empty">connect first</div></div></div>
   <button class="pillbtn" id="scopeBtn" style="display:none">Apply table scope <i>↗</i></button>
+  <div class="note">On SQLite the scope is enforced for every query. On server databases it focuses the agent; restrict real access with the database user's grants.</div>
 </div></div></aside>
 
 <script>
@@ -249,8 +250,14 @@ function addStep(s, i) {
   if (s.tool === "column_values") { heat(a.table); const first = (s.output.split("\n")[1] || "").replace(/ \(\d+\)$/, ""); if (!s.output.startsWith("ERROR")) chip(a.table, first); }
   if (s.tool === "run_sql" && a.query) travel(a.query);
 }
+// --- highlight
+const escHtml = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AND|OR|NOT|IN|AS|GROUP|BY|ORDER|LIMIT|OFFSET|HAVING|COUNT|SUM|AVG|MIN|MAX|DISTINCT|CASE|WHEN|THEN|ELSE|END|CAST|WITH|UNION|DESC|ASC|IS|NULL|LIKE|ILIKE|BETWEEN|REAL)\b/gi;
-const highlight = sql => esc(sql).replace(/'[^']*'/g, m => `<span class="v">${m}</span>`).replace(KW, m => `<span class="k">${m}</span>`).replace(/\b\d+(\.\d+)?\b/g, m => `<span class="n">${m}</span>`);
+// split out string literals first, then escape each piece: escaping first turns ' into &#39; and breaks the match
+const highlight = sql => String(sql).split(/('(?:[^']|'')*')/g).map((part, i) => i % 2
+  ? `<span class="v">${escHtml(part)}</span>`
+  : escHtml(part).replace(KW, m => `<span class="k">${m}</span>`).replace(/\b\d+(\.\d+)?\b/g, m => `<span class="n">${m}</span>`)).join("");
+// --- end highlight
 function typeSQL(sql) {
   const el = $("sql");
   if (reduced) { el.innerHTML = highlight(sql); return; }

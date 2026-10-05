@@ -3,6 +3,7 @@ docs/superpowers/
 __pycache__/
 .env
 data/
-results*.jsonl
+results_pilot.jsonl
+*.fixed.jsonl
 .superpowers/
 .DS_Store

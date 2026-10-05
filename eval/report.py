@@ -9,7 +9,7 @@ BASELINE = "one_shot"
 GROUPS = ("overall", "simple", "moderate", "challenging")
 
 
-def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0) -> dict:
+def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0, baseline: str = BASELINE) -> dict:
     conditions = list(dict.fromkeys(r["condition"] for r in rows))
     last = {(r["question_id"], r["condition"]): r for r in rows}
     ok = {k: r for k, r in last.items() if r["status"] == "ok"}
@@ -52,9 +52,9 @@ def summarize(rows: list[dict], n_boot: int = 10_000, seed: int = 0) -> dict:
             }
     n = len(qids)
     for c in conditions:
-        if BASELINE not in conditions or c == BASELINE:
+        if baseline not in conditions or c == baseline:
             continue
-        diffs = [int(ok[q, c]["correct"]) - int(ok[q, BASELINE]["correct"]) for q in qids]
+        diffs = [int(ok[q, c]["correct"]) - int(ok[q, baseline]["correct"]) for q in qids]
         rng = random.Random(seed)
         boots = sorted(sum(rng.choices(diffs, k=n)) / n for _ in range(n_boot))
         out[c]["delta"] = sum(diffs) / n
@@ -91,9 +91,10 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Summarize one or more results files")
     p.add_argument("paths", nargs="*", default=["results.jsonl"])
     p.add_argument("--svg", default="docs/accuracy.svg")
+    p.add_argument("--baseline", default=BASELINE, help="condition the others are compared with")
     a = p.parse_args()
     rows = [json.loads(line) for path in a.paths for line in Path(path).read_text().splitlines()]
-    s = summarize(rows)
+    s = summarize(rows, baseline=a.baseline)
     print(f"paired questions: {s['n']}  gold_failed: {s['gold_failed']}  errors: {s['errors']}\n")
     print("| condition | " + " | ".join(GROUPS) + " | $/question | mean steps | step cap hit |")
     print("|---" * (len(GROUPS) + 4) + "|")
@@ -116,7 +117,7 @@ def main() -> None:
     for c in s["conditions"]:
         if "delta" in s[c]:
             low, high = s[c]["ci"]
-            print(f"delta ({c} − {BASELINE}): {s[c]['delta']:+.1%}  95% CI [{low:+.1%}, {high:+.1%}]")
+            print(f"delta ({c} − {a.baseline}): {s[c]['delta']:+.1%}  95% CI [{low:+.1%}, {high:+.1%}]")
     Path(a.svg).write_text(svg(s))
 
 

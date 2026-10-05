@@ -84,6 +84,7 @@ def main() -> None:
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--critic", action="store_true", help="also run the critic (condition explorer_critic)")
     p.add_argument("--db-url", help="run on this database (e.g. PostgreSQL) instead of the BIRD SQLite files")
+    p.add_argument("--label", help="condition name written to the rows (e.g. explorer_pg), so runs can be compared")
     a = p.parse_args()
 
     # mini-dev ships items 137 and 138 twice, byte-identical; 498 unique questions
@@ -96,13 +97,14 @@ def main() -> None:
     out = Path(a.out)
     done = load_done(out)
     conditions = ("explorer_critic",) if a.critic else CONDITIONS
-    jobs = [(q, c) for q in questions for c in conditions if (q["question_id"], c) not in done]
+    label = lambda c: a.label or c  # noqa: E731
+    jobs = [(q, c) for q in questions for c in conditions if (q["question_id"], label(c)) not in done]
     client = OpenAI(max_retries=5)
     lock = threading.Lock()
 
     def work(job: tuple[dict, str]) -> tuple[str, float]:
         q, condition = job
-        row = evaluate(client, q, condition, database_for(q["db_id"], a.db_url))
+        row = evaluate(client, q, condition, database_for(q["db_id"], a.db_url)) | {"condition": label(condition)}
         with lock, out.open("a") as f:
             f.write(json.dumps(row) + "\n")
         return row["status"], row.get("cost", 0.0)

@@ -167,3 +167,30 @@ def test_fetch_returns_column_names_and_plain_rows(database):
     columns, rows = database.fetch("SELECT id, name FROM items WHERE id < 3 ORDER BY id")
     assert columns == ["id", "name"] and rows == [[1, "apple"], [2, "pear"]]
     assert len(database.fetch("SELECT id FROM items", limit=2)[1]) == 2
+
+
+def test_a_table_that_cannot_be_counted_does_not_break_the_map(database, monkeypatch):
+    def slow(statement):
+        raise QueryError("timeout")
+    monkeypatch.setattr(database, "_rows", slow)
+    m = database.schema_map()
+    assert {"name": "items", "rows": None} in m["tables"]
+    assert "items (? rows)" in database.overview()
+
+
+def test_sqlite_table_scope_is_enforced_for_model_sql(db):
+    scoped = Database.sqlite(db, tables=["items"])
+    assert scoped.run("SELECT name FROM items WHERE id = 1") == "('apple',)"
+    assert scoped.run("SELECT * FROM regions").startswith("ERROR: access to regions")
+    assert scoped.run("SELECT name FROM sqlite_master").startswith("ERROR: access to sqlite_master")
+    assert Database.sqlite(db).run("SELECT COUNT(*) FROM regions") == "(5,)"
+
+
+def test_bird_databases_on_a_server_keep_their_bird_name(db, tmp_path, monkeypatch):
+    import shutil
+    import sqlagent.db as dbmod
+    (tmp_path / "shop").mkdir()
+    shutil.copy(db, tmp_path / "shop" / "shop.sqlite")
+    monkeypatch.setattr(dbmod, "DB_DIR", tmp_path)
+    server = dbmod.bird("shop", url=f"sqlite:///{tmp_path / 'shop' / 'shop.sqlite'}")
+    assert server.name == "shop" and server.schema_map()["name"] == "shop"

@@ -113,6 +113,7 @@ class Database:
             wanted = {t.lower() for t in tables}
             names = [n for n in names if n.lower() in wanted]
         self.table_names = sorted(names, key=str.lower)
+        self._scope = {t.lower() for t in self.table_names} if tables is not None else None
         self._columns = {t: cols for (_, t), cols in insp.get_multi_columns(filter_names=self.table_names).items()}
         self._pks = {t: set(pk.get("constrained_columns") or [])
                      for (_, t), pk in insp.get_multi_pk_constraint(filter_names=self.table_names).items()}
@@ -144,7 +145,7 @@ class Database:
         raw = conn.connection.driver_connection
         # sqlite3's own timeout only covers lock waits; the progress handler aborts a running query
         raw.set_progress_handler(lambda: time.monotonic() > deadline, 10_000)
-        raw.set_authorizer(lambda action, *_: sqlite3.SQLITE_OK if action in _READ_ACTIONS else sqlite3.SQLITE_DENY)
+        raw.set_authorizer(self._authorize)
         try:
             yield
         finally:  # the Inspector needs PRAGMA, so the guard only lives around one query
@@ -172,6 +173,14 @@ class Database:
             if time.monotonic() > deadline or "statement timeout" in message or "execution time exceeded" in message:
                 raise QueryError("timeout") from e
             raise QueryError(message.strip()) from e
+
+    def _authorize(self, action, arg1, *_):
+        if action not in _READ_ACTIONS:
+            return sqlite3.SQLITE_DENY
+        # with a table scope, model SQL may not read other tables (or sqlite_master) either
+        if action == sqlite3.SQLITE_READ and self._scope is not None and str(arg1).lower() not in self._scope:
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
 
     def _rows(self, statement) -> list[tuple]:
         return self._query(statement)[1]
@@ -219,13 +228,18 @@ class Database:
                      for t in self.table_names for fk in self._fks.get(t, [])
                      for src, dst in zip(fk["constrained_columns"], fk["referred_columns"] or [None] * 99)]
             self._map = {"name": self.name, "dialect": self.dialect, "joins": joins,
-                         "tables": [{"name": t, "rows": self._rows(select(func.count()).select_from(table(t)))[0][0]}
-                                    for t in self.table_names]}
+                         "tables": [{"name": t, "rows": self._count(t)} for t in self.table_names]}
         return self._map
+
+    def _count(self, table_name: str) -> int | None:
+        try:  # a huge table can exceed the query timeout; the map must still load
+            return self._rows(select(func.count()).select_from(table(table_name)))[0][0]
+        except QueryError:
+            return None
 
     def overview(self) -> str:
         m = self.schema_map()
-        listing = "\n".join(f"{t['name']} ({t['rows']:,} rows)" for t in m["tables"])
+        listing = "\n".join(f"{t['name']} ({'?' if t['rows'] is None else format(t['rows'], ',')} rows)" for t in m["tables"])
         joins = [f"{j['from'][0]}.{j['from'][1]} → {j['to'][0]}" + (f".{j['to'][1]}" if j["to"][1] else "")
                  for j in m["joins"]]
         return (f'<database name="{m["name"]}" dialect="{m["dialect"]}">\n<tables>\n{listing}\n</tables>\n'
@@ -286,7 +300,7 @@ def bird(db_id: str, url: str | None = None, timeout: float = 10.0) -> Database:
     sqlite = bird_sqlite(db_id, timeout=timeout)
     if url is None:
         return sqlite
-    return Database(url, catalog=sqlite.catalog, tables=sqlite.table_names, timeout=timeout)
+    return Database(url, catalog=sqlite.catalog, tables=sqlite.table_names, timeout=timeout, _name=db_id)
 
 
 def same_result(pred: list[tuple], gold: list[tuple]) -> bool:

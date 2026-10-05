@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -52,6 +53,8 @@ def create_app(client_factory=None) -> FastAPI:
         from openai import OpenAI
         client_factory = lambda: OpenAI(max_retries=5)  # noqa: E731
     app = FastAPI(title="sql-agent")
+    # binding to 127.0.0.1 is not enough: a rebinding DNS name could make any web page same-origin with this API
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     sessions: dict[str, Database] = {}
 
     @app.get("/")

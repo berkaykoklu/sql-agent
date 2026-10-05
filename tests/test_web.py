@@ -50,7 +50,7 @@ def events(body: str) -> list[tuple[str, dict]]:
 
 
 def app_with(replies):
-    return TestClient(create_app(lambda: FakeClient(replies)))
+    return TestClient(create_app(lambda: FakeClient(replies)), base_url="http://127.0.0.1")
 
 
 def test_sources_list_bird_databases_and_no_postgres_without_pg_url(bird_dir):
@@ -101,3 +101,25 @@ def test_unknown_session_is_404(bird_dir):
 def test_connect_with_a_table_selection_scopes_the_schema(bird_dir):
     r = app_with([]).post("/api/connect", json={"source": "sqlite:shop", "tables": ["items", "regions"]})
     assert [t["name"] for t in r.json()["schema"]["tables"]] == ["items", "regions"]
+
+
+def test_requests_for_other_host_names_are_refused(bird_dir):
+    # DNS rebinding: a web page pointing its own domain at 127.0.0.1 must not reach the API
+    r = app_with([]).get("/api/sources", headers={"host": "evil.example"})
+    assert r.status_code == 400
+
+
+def test_sql_highlighting_keeps_literals_readable_and_escaped():
+    import re
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not installed")
+    page = Path("sqlagent/web/index.html").read_text()
+    code = re.search(r"// --- highlight\n(.*?)// --- end highlight", page, re.S).group(1)
+    out = subprocess.run([node, "-e", code + "console.log(highlight(process.argv[1]))", "--",
+                          "SELECT a FROM t WHERE x = 'east Bohemia' AND y = '<b>' LIMIT 3"],
+                         capture_output=True, text=True, check=True).stdout
+    assert "<span class=\"v\">'east Bohemia'</span>" in out and "&#39;" not in out
+    assert "&lt;b&gt;" in out and "<b>" not in out.replace('<span class="v">', "")

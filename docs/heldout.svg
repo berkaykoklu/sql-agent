@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="488" height="300" font-family="system-ui, sans-serif" font-size="13" fill="#202124">
+  <rect width="488" height="300" fill="#fff"/>
+  <rect x="40" y="156.2" width="30" height="103.8" fill="#9aa0a6"/>
+  <text x="55.0" y="151.2" text-anchor="middle">58%</text>
+  <rect x="76" y="143.0" width="30" height="117.0" fill="#c8ccd0"/>
+  <text x="91.0" y="138.0" text-anchor="middle">65%</text>
+  <text x="73.0" y="278" text-anchor="middle">overall</text>
+  <rect x="142" y="137.6" width="30" height="122.4" fill="#9aa0a6"/>
+  <text x="157.0" y="132.6" text-anchor="middle">68%</text>
+  <rect x="178" y="129.2" width="30" height="130.8" fill="#c8ccd0"/>
+  <text x="193.0" y="124.2" text-anchor="middle">73%</text>
+  <text x="175.0" y="278" text-anchor="middle">simple</text>
+  <rect x="244" y="184.3" width="30" height="75.7" fill="#9aa0a6"/>
+  <text x="259.0" y="179.3" text-anchor="middle">42%</text>
+  <rect x="280" y="155.7" width="30" height="104.3" fill="#c8ccd0"/>
+  <text x="295.0" y="150.7" text-anchor="middle">58%</text>
+  <text x="277.0" y="278" text-anchor="middle">moderate</text>
+  <rect x="346" y="151.2" width="30" height="108.8" fill="#9aa0a6"/>
+  <text x="361.0" y="146.2" text-anchor="middle">60%</text>
+  <rect x="382" y="159.5" width="30" height="100.5" fill="#c8ccd0"/>
+  <text x="397.0" y="154.5" text-anchor="middle">56%</text>
+  <text x="379.0" y="278" text-anchor="middle">challenging</text>
+  <rect x="40" y="12" width="12" height="12" fill="#9aa0a6"/>
+  <text x="58" y="23">one_shot</text>
+  <rect x="190" y="12" width="12" height="12" fill="#c8ccd0"/>
+  <text x="208" y="23">explorer</text>
+</svg>

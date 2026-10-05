@@ -63,3 +63,12 @@ def test_latency_median_and_p90_are_reported():
     rs = [{"question_id": i, "condition": "explorer", "difficulty": "simple", "status": "ok", "correct": True,
            "cost": 0.001, "exhausted": False, "steps": [], "seconds": float(i)} for i in range(1, 11)]
     assert summarize(rs)["explorer"]["seconds"] == {"median": 5.5, "p90": 9.0}
+
+
+def test_any_condition_can_be_the_baseline():
+    rs = [{"question_id": i, "condition": c, "difficulty": "simple", "status": "ok", "correct": ok,
+           "cost": 0.001, "exhausted": False, "steps": []}
+          for i, (a, b) in enumerate([(1, 1), (1, 0), (0, 0), (1, 1)])
+          for c, ok in (("explorer_sqlite", bool(a)), ("explorer_pg", bool(b)))]
+    s = summarize(rs, baseline="explorer_sqlite")
+    assert s["explorer_pg"]["delta"] == -0.25 and "delta" not in s["explorer_sqlite"]
