@@ -11,6 +11,8 @@ $0.001.
 
 ![Held-out accuracy: one-shot and explorer agent](docs/heldout.svg)
 
+![The local web UI answers a question about the financial database](docs/demo.gif)
+
 Two recorded runs, step by step: https://berkaykoklu.com/projects/sql-agent
 
 ## How it works
